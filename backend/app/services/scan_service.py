@@ -1,0 +1,101 @@
+"""Sherlock-backed digital footprint scanning service."""
+
+import asyncio
+import re
+import subprocess
+import sys
+from typing import TypedDict
+
+from app.config import get_settings
+
+
+class ScanResult(TypedDict):
+    """Social-platform presence flags returned by a scanner."""
+
+    github: bool
+    reddit: bool
+    twitter: bool
+    instagram: bool
+    linkedin: bool
+
+
+class SherlockScanError(RuntimeError):
+    """Base error for Sherlock execution failures."""
+
+
+class SherlockUnavailableError(SherlockScanError):
+    """Raised when Sherlock cannot be started or is not installed."""
+
+
+class SherlockTimeoutError(SherlockScanError):
+    """Raised when Sherlock exceeds the configured execution timeout."""
+
+
+PLATFORM_NAMES = {
+    "GitHub": "github",
+    "Reddit": "reddit",
+    "Twitter": "twitter",
+    "Instagram": "instagram",
+    "LinkedIn": "linkedin",
+}
+FOUND_RESULT_PATTERN = re.compile(r"^\[\+\]\s+(?P<platform>[^:]+):\s+\S+", re.MULTILINE)
+
+
+def _parse_sherlock_output(output: str) -> ScanResult:
+    """Convert Sherlock's found-result lines into the API's flat result shape."""
+
+    result: ScanResult = {
+        "github": False,
+        "reddit": False,
+        "twitter": False,
+        "instagram": False,
+        "linkedin": False,
+    }
+    for match in FOUND_RESULT_PATTERN.finditer(output):
+        platform = PLATFORM_NAMES.get(match.group("platform").strip())
+        if platform is not None:
+            result[platform] = True
+    return result
+
+
+async def scan_username(username: str) -> ScanResult:
+    """Run Sherlock for a username and return supported platform matches."""
+
+    settings = get_settings()
+    command = [
+        sys.executable,
+        "-m",
+        "sherlock_project.sherlock",
+        username,
+        "--no-color",
+        "--print-found",
+        "--timeout",
+        str(settings.sherlock_request_timeout),
+    ]
+    for platform in PLATFORM_NAMES:
+        command.extend(["--site", platform])
+
+    try:
+        completed_process = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=settings.sherlock_process_timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SherlockTimeoutError(
+            "Sherlock scan exceeded the configured timeout"
+        ) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise SherlockUnavailableError(
+            "Sherlock is not available in the backend environment"
+        ) from exc
+
+    if completed_process.returncode not in (0, 1):
+        error = completed_process.stderr.strip()
+        raise SherlockUnavailableError(
+            f"Sherlock failed to complete the scan: {error or 'unknown error'}"
+        )
+    return _parse_sherlock_output(completed_process.stdout)
