@@ -196,7 +196,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .topbar-nav-divider { height: 2rem; width: 1px; background: linear-gradient(#8b2eff, #00d9ff, transparent); opacity: .8; }
 .topbar-nav-status { height: .55rem; width: .55rem; flex: 0 0 auto; border-radius: 50%; background: #00ffa3; box-shadow: 0 0 0 4px rgba(0,255,163,.08), 0 0 14px rgba(0,255,163,.9); animation: topbar-status-pulse 3s ease-in-out infinite; }
 .topbar-nav-copy { position: relative; z-index: 1; white-space: nowrap; font-size: clamp(.62rem, 1vw, .82rem); font-weight: 700; letter-spacing: .07rem; }
-.topbar-nav-copy strong { background: linear-gradient(90deg, #00d9ff, #7defff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.topbar-nav-copy strong { color: #f4f7ff; }
 .topbar-nav-arrow { position: relative; z-index: 1; display: grid; height: 1.75rem; width: 1.75rem; flex: 0 0 auto; place-items: center; border: 1px solid rgba(0,217,255,.5); border-radius: .45rem; color: #00d9ff; box-shadow: 0 0 12px rgba(0,217,255,.2); transition: transform .3s, box-shadow .3s; }
 .topbar-nav-arrow svg { height: .75rem; width: .75rem; }
 .topbar-nav-link:hover .topbar-nav-arrow { box-shadow: 0 0 22px rgba(0,217,255,.45); transform: translate(3px, -3px); }
