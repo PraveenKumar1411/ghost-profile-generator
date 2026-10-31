@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { FaHistory } from 'react-icons/fa'
+import { ExternalLink, History } from 'lucide-react'
 import Logo from './Logo'
 
 export default function TopBar({ showScanAgain = false }) {
@@ -15,11 +15,14 @@ export default function TopBar({ showScanAgain = false }) {
             <span aria-hidden="true">↗</span>
           </Link>
         )}
-        <Link to="/history" className="topbar-nav-link">
-          <FaHistory className="topbar-nav-icon" aria-hidden="true" />
-          <span className="topbar-nav-status" aria-hidden="true" />
-          <span>SCAN HISTORY</span>
-          <span className="topbar-nav-arrow" aria-hidden="true">↗</span>
+        <Link to="/history" className="topbar-nav-link" aria-label="Open scan history">
+          <span className="topbar-nav-leading">
+            <History className="topbar-nav-icon" aria-hidden="true" />
+            <span className="topbar-nav-divider" aria-hidden="true" />
+            <span className="topbar-nav-status" aria-hidden="true" />
+          </span>
+          <span className="topbar-nav-copy"><span>SCAN</span> <strong>HISTORY</strong></span>
+          <span className="topbar-nav-arrow" aria-hidden="true"><ExternalLink /></span>
         </Link>
       </nav>
     </header>
