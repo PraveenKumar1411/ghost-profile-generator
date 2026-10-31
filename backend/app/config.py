@@ -13,12 +13,14 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     debug: bool = False
+
     sherlock_request_timeout: int = Field(
         default=30,
         alias="SHERLOCK_REQUEST_TIMEOUT",
         ge=1,
         le=120,
     )
+
     sherlock_process_timeout: int = Field(
         default=180,
         alias="SHERLOCK_PROCESS_TIMEOUT",
@@ -32,10 +34,17 @@ class Settings(BaseSettings):
     )
 
     cors_origins: list[str] = Field(
-        default=["http://localhost:5173"],
+        default=[
+            "http://localhost:5173",
+            "https://ghost-profile-generator.vercel.app",
+        ],
         alias="CORS_ORIGINS",
     )
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    log_level: str = Field(
+        default="INFO",
+        alias="LOG_LEVEL",
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -48,5 +57,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Return one cached settings instance for the process."""
-
     return Settings()
