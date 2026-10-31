@@ -70,10 +70,10 @@ export default function ScanForm() {
           />
         </div>
       </div>
-      <button type="submit" disabled={loading || status === 'success'} className="button-primary mt-3 w-full">
+      <button type="submit" disabled={loading || status === 'success'} className="button-primary mt-2 w-full">
         {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
       </button>
-      <div id="scan-error" className="mt-3 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
+      <div id="scan-error" className="mt-2 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
       {job?.status === 'failed' && (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-xs text-rose-200">
           <span>Scan failed. You can retry this identity.</span>

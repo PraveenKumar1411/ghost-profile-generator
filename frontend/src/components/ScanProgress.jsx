@@ -50,7 +50,7 @@ export default function ScanProgress({
 
   return (
     <section
-      className="mt-4 overflow-hidden rounded-2xl border border-cyan-400/20 bg-slate-950/70 p-4 shadow-[0_0_30px_rgba(65,217,255,0.08)] backdrop-blur-xl sm:p-5"
+      className="mt-3 overflow-hidden rounded-2xl border border-cyan-400/20 bg-slate-950/70 p-4 shadow-[0_0_30px_rgba(65,217,255,0.08)] backdrop-blur-xl sm:p-5"
       aria-label="Scan progress"
       aria-live="polite"
     >

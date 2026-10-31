@@ -47,16 +47,16 @@ export default function HomePage() {
   return (
     <div className="app-shell">
       <TopBar />
-      <main className="relative mx-auto flex min-h-[calc(100vh-84px)] w-full max-w-6xl items-center px-5 pb-12 pt-4 sm:px-8 sm:pt-0">
+      <main className="relative mx-auto flex min-h-[calc(100vh-84px)] w-full max-w-6xl items-center px-5 pb-12 pt-2 sm:px-8 sm:pt-0">
         <div className="grid-bg pointer-events-none absolute inset-0 opacity-50" />
         <div className="cyber-particles pointer-events-none absolute inset-0" aria-hidden="true">
           <span /><span /><span /><span /><span />
         </div>
+        <div className="home-platform-badge inline-flex items-center gap-2 rounded-full border border-cyan/20 bg-cyan/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-cyan">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan shadow-[0_0_10px_#41d9ff]" /> OSINT Intelligence Platform
+        </div>
         <div className="home-hero-grid relative w-full">
           <section className="home-scan-hero relative z-10 flex max-w-2xl flex-col items-start text-left">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-cyan/20 bg-cyan/[0.06] px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-cyan">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan shadow-[0_0_10px_#41d9ff]" /> OSINT Intelligence Platform
-            </div>
             <h1
               className="hero-headline max-w-2xl text-5xl font-semibold leading-[0.96] tracking-[-0.06em] text-white sm:text-7xl"
               aria-label="Find the ghost behind a username."
@@ -67,10 +67,10 @@ export default function HomePage() {
                 <span className="typewriter-cursor" />
               </span>.
             </h1>
-            <p className="home-hero-description mt-6 max-w-xl text-sm leading-6 text-slate-400 sm:text-base">
+            <p className="home-hero-description mt-5 max-w-xl text-sm leading-6 text-slate-400 sm:text-base">
               Turn scattered signals into a clear, privacy-first intelligence brief.
             </p>
-            <div className="home-scan-form mt-7 w-full"><ScanForm /></div>
+            <div className="home-scan-form mt-6 w-full"><ScanForm /></div>
           </section>
           <aside className="home-visual-rail" aria-label="Live cyber intelligence visualization">
           <div className="cyber-visual radar-visual-frame relative" aria-label="Live cyber intelligence visualization">

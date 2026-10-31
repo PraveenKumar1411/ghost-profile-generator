@@ -11,15 +11,15 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .app-shell { min-height: 100vh; overflow: hidden; background: radial-gradient(circle at 75% 15%, rgba(35, 91, 128, .15), transparent 30%), #070b14; }
 .topbar-shell { width: calc(100% - 60px); max-width: none; }
 .topbar-actions { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; min-width: 12.5rem; }
-.topbar-scan-again { position: relative; display: inline-flex; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: .7rem; overflow: hidden; border: 1px solid #41d9ff; border-radius: .9rem; background: linear-gradient(110deg, #18d8e8 0%, #41d9ff 48%, #3182ed 100%); padding: .65rem .8rem .65rem 1rem; color: #03131b; font-family: Orbitron, "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .08rem; text-transform: uppercase; box-shadow: inset 0 1px rgba(255,255,255,.5), 0 0 20px rgba(65,217,255,.32), 0 0 34px rgba(49,130,237,.18); transition: border-color .3s, box-shadow .3s, transform .3s, filter .3s; }
-.topbar-scan-again::after { position: absolute; top: -70%; right: 12%; height: 240%; width: 20%; background: rgba(255,255,255,.13); content: ""; transform: rotate(38deg); pointer-events: none; }
-.topbar-scan-again:hover { border-color: #b6f3ff; box-shadow: inset 0 1px rgba(255,255,255,.7), 0 0 30px rgba(65,217,255,.55), 0 0 42px rgba(49,130,237,.28); filter: brightness(1.08); transform: scale(1.03); }
-.topbar-scan-again-icon { position: relative; z-index: 1; height: 1.25rem; width: 1.25rem; filter: drop-shadow(0 0 5px rgba(255,255,255,.4)); transition: transform .4s; }
-.topbar-scan-again:hover .topbar-scan-again-icon { transform: rotate(180deg); }
+.topbar-scan-again { position: relative; display: inline-flex; min-height: 3.25rem; align-items: center; justify-content: space-between; gap: .7rem; overflow: hidden; border: 1px solid transparent; border-radius: .85rem; background: linear-gradient(#070d1b, #070d1b) padding-box, linear-gradient(110deg, #8b2eff, #00d9ff 52%, #00ffa3) border-box; padding: .65rem .8rem; color: #f4f7ff; font-family: Orbitron, "IBM Plex Mono", monospace; font-size: .68rem; font-weight: 700; letter-spacing: .08rem; text-transform: uppercase; box-shadow: inset 0 1px rgba(255,255,255,.1), inset 0 -8px 16px rgba(0,0,0,.22), 0 0 18px rgba(139,46,255,.18), 0 0 24px rgba(0,217,255,.12); backdrop-filter: blur(18px); transition: border-color .3s, box-shadow .3s, transform .3s, filter .3s; }
+.topbar-scan-again::after { position: absolute; top: -70%; right: 12%; height: 240%; width: 20%; background: rgba(255,255,255,.08); content: ""; transform: rotate(38deg); pointer-events: none; }
+.topbar-scan-again:hover { box-shadow: inset 0 1px rgba(255,255,255,.18), inset 0 -8px 16px rgba(0,0,0,.18), 0 0 30px rgba(139,46,255,.32), 0 0 38px rgba(0,217,255,.24); filter: brightness(1.08); transform: scale(1.03); }
+.topbar-scan-again-icon { position: relative; z-index: 1; height: 1.25rem; width: 1.25rem; color: #00d9ff; filter: drop-shadow(0 0 7px rgba(0,217,255,.65)); transition: transform .4s; }
+.topbar-scan-again:hover .topbar-scan-again-icon { color: #00ffa3; transform: rotate(180deg); }
 .topbar-scan-again > span { position: relative; z-index: 1; }
-.topbar-scan-again-arrow { display: grid; height: 2rem; width: 2rem; place-items: center; border: 1px solid rgba(255,255,255,.38); border-radius: .55rem; background: rgba(255,255,255,.25); box-shadow: 0 0 12px rgba(255,255,255,.18); transition: transform .3s, background .3s; }
+.topbar-scan-again-arrow { display: grid; height: 1.75rem; width: 1.75rem; place-items: center; border: 1px solid rgba(0,217,255,.5); border-radius: .45rem; color: #00d9ff; background: rgba(0,217,255,.06); box-shadow: 0 0 12px rgba(0,217,255,.2); transition: transform .3s, background .3s, box-shadow .3s; }
 .topbar-scan-again-arrow svg { height: .85rem; width: .85rem; }
-.topbar-scan-again:hover .topbar-scan-again-arrow { background: rgba(255,255,255,.4); transform: translate(2px, -2px); }
+.topbar-scan-again:hover .topbar-scan-again-arrow { background: rgba(0,217,255,.14); box-shadow: 0 0 20px rgba(0,217,255,.4); transform: translate(2px, -2px); }
 .topbar-actions .topbar-scan-again { position: absolute; top: 50%; left: 20%; width: 13.5rem; transform: translateY(-50%); }
 .topbar-actions .topbar-scan-again:hover { transform: translateY(-50%) scale(1.03); }
 .hero-headline { text-wrap: balance; text-shadow: 0 0 32px rgba(65,217,255,.08); }
@@ -27,7 +27,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .typewriter-cursor { display: inline-block; height: .82em; width: 2px; margin-left: .14em; vertical-align: -.06em; background: #41d9ff; box-shadow: 0 0 10px rgba(65,217,255,.9); animation: typewriter-cursor-blink  .8s steps(1, end) infinite; }
 @keyframes typewriter-cursor-blink { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
 .home-hero-grid { min-height: 38rem; display: grid; grid-template-columns: 52% 48%; align-items: center; justify-content: space-between; gap: 0; }
-.home-scan-hero { width: 100%; }
+.home-platform-badge { position: absolute; top: 0; left: 1.25rem; z-index: 10; }
+.home-scan-hero { width: 100%; transform: translateY(-3rem); }
 .home-hero-description { color: #94a3b8; }
 .home-scan-form { display: flex; justify-content: center; }
 .home-scan-form > form { width: 100%; max-width: 40rem; }
@@ -41,14 +42,15 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .home-radar-scale { transform: scale(1); transform-origin: bottom right; }
 @media (max-width: 900px) {
   .home-hero-grid { grid-template-columns: 1fr; gap: 2rem; padding: 3rem 0; }
-  .home-scan-hero { max-width: 42rem; }
+  .home-scan-hero { max-width: 42rem; transform: none; }
   .home-visual-rail { width: min(100%, 25rem); margin: 0 auto; transform: none; }
   .radar-visual-frame { height: 25rem; width: 25rem; }
   .radar-canvas { height: 24rem; width: 24rem; }
+  .home-platform-badge { left: 1.5rem; }
 }
 @media (max-width: 560px) {
   .home-hero-grid { padding: 2rem 0 3rem; }
-  .home-scan-hero { align-items: stretch; text-align: center; }
+  .home-scan-hero { align-items: stretch; text-align: center; transform: none; }
   .home-hero-description { margin-left: auto; margin-right: auto; }
   .home-scan-form { text-align: left; }
   .home-visual-rail { transform: scale(.9); transform-origin: top center; }
