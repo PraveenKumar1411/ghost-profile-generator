@@ -54,7 +54,7 @@ export default function ScanForm() {
       <label htmlFor="username" className="mb-3 block font-mono text-xs uppercase tracking-[0.18em] text-slate-400">
         Username / email handle
       </label>
-      <div className="scan-shell group flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-2 transition focus-within:border-cyan/50 focus-within:bg-cyan/[0.04] sm:flex-row">
+      <div className="scan-shell group flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-2 transition focus-within:border-cyan/50 focus-within:bg-cyan/[0.04]">
         <div className="flex flex-1 items-center px-3">
           <span className="mr-2 font-mono text-cyan">@</span>
           <input
@@ -69,10 +69,10 @@ export default function ScanForm() {
             className="w-full bg-transparent py-3 text-base text-slate-100 outline-none placeholder:text-slate-600"
           />
         </div>
-        <button type="submit" disabled={loading || status === 'success'} className="button-primary min-w-40">
-          {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
-        </button>
       </div>
+      <button type="submit" disabled={loading || status === 'success'} className="button-primary mt-3 w-full">
+        {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
+      </button>
       <div id="scan-error" className="mt-3 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
       {job?.status === 'failed' && (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-xs text-rose-200">
