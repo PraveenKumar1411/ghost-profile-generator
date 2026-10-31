@@ -26,9 +26,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .typewriter-word { display: inline-block; min-width: 7ch; text-align: left; }
 .typewriter-cursor { display: inline-block; height: .82em; width: 2px; margin-left: .14em; vertical-align: -.06em; background: #41d9ff; box-shadow: 0 0 10px rgba(65,217,255,.9); animation: typewriter-cursor-blink  .8s steps(1, end) infinite; }
 @keyframes typewriter-cursor-blink { 0%, 45% { opacity: 1; } 46%, 100% { opacity: 0; } }
-.home-hero-grid { min-height: 38rem; display: grid; grid-template-columns: 52% 48%; align-items: center; justify-content: space-between; gap: 0; }
+.home-hero-grid { min-height: 38rem; display: grid; grid-template-columns: 52% 48%; align-items: center; justify-content: space-between; gap: 0; transform: translateY(-1rem); }
 .home-platform-badge { position: absolute; top: 0; left: 1.25rem; z-index: 10; }
-.home-scan-hero { width: 100%; transform: translateY(-3rem); }
+.home-scan-hero { width: 100%; padding-top: 3.5rem; }
 .home-hero-description { color: #94a3b8; }
 .home-scan-form { display: flex; justify-content: center; }
 .home-scan-form > form { width: 100%; max-width: 40rem; }
@@ -41,8 +41,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .radar-canvas { height: 30rem; width: 30rem; max-width: none; }
 .home-radar-scale { transform: scale(1); transform-origin: bottom right; }
 @media (max-width: 900px) {
-  .home-hero-grid { grid-template-columns: 1fr; gap: 2rem; padding: 3rem 0; }
-  .home-scan-hero { max-width: 42rem; transform: none; }
+  .home-hero-grid { grid-template-columns: 1fr; gap: 2rem; padding: 3rem 0; transform: none; }
+  .home-scan-hero { max-width: 42rem; padding-top: 3.5rem; }
   .home-visual-rail { width: min(100%, 25rem); margin: 0 auto; transform: none; }
   .radar-visual-frame { height: 25rem; width: 25rem; }
   .radar-canvas { height: 24rem; width: 24rem; }
@@ -50,7 +50,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 }
 @media (max-width: 560px) {
   .home-hero-grid { padding: 2rem 0 3rem; }
-  .home-scan-hero { align-items: stretch; text-align: center; transform: none; }
+  .home-scan-hero { align-items: stretch; padding-top: 3.5rem; text-align: center; }
   .home-hero-description { margin-left: auto; margin-right: auto; }
   .home-scan-form { text-align: left; }
   .home-visual-rail { transform: scale(.9); transform-origin: top center; }
