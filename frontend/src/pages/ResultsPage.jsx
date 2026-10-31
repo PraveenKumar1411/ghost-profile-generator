@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import TopBar from '../components/TopBar'
 import PlatformCard from '../components/PlatformCard'
 import ExposureCharts from '../components/ExposureCharts'
@@ -134,7 +134,7 @@ export default function ResultsPage() {
 
   return (
     <div className="app-shell results-shell">
-      <TopBar />
+      <TopBar showScanAgain />
       <main className="mx-auto w-full max-w-6xl px-5 pb-20 sm:px-8">
         <section className="results-hero">
           <div>
@@ -225,7 +225,6 @@ export default function ResultsPage() {
             <button type="button" onClick={handleDownload} disabled={downloading} className="button-primary report-button">
               {downloading ? <><span className="spinner" /> generating...</> : <>download PDF report <span>↓</span></>}
             </button>
-            <Link to="/" className="button-secondary">scan again <span>↗</span></Link>
           </div>
         </section>
         {downloadError && <p className="mt-4 text-right text-sm text-rose-300" role="alert">{downloadError}</p>}
