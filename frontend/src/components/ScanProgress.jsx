@@ -95,11 +95,7 @@ export default function ScanProgress({
         aria-valuetext={`${progress}% complete`}
       >
         <div
-          className={`relative h-full rounded-full bg-[linear-gradient(90deg,#10B981_0%,#34D399_50%,#6EE7B7_100%)] transition-[width] duration-300 ease-out ${
-            complete
-              ? 'shadow-[0_0_20px_rgba(52,211,153,0.5)]'
-              : 'shadow-[0_0_16px_rgba(16,185,129,0.35)]'
-          }`}
+          className="relative h-full rounded-full bg-[linear-gradient(90deg,#10B981_0%,#34D399_50%,#6EE7B7_100%)] shadow-[0_0_12px_rgba(16,185,129,.35),0_0_30px_rgba(16,185,129,.20)] transition-[width] duration-300 ease-out"
           style={{ width: `${progress}%` }}
         >
           <span className="absolute inset-y-0 right-0 w-16 animate-pulse bg-white/50 blur-sm" />
