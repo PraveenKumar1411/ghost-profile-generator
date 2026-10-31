@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ExternalLink, History } from 'lucide-react'
+import { ExternalLink, History, RefreshCw } from 'lucide-react'
 import Logo from './Logo'
 
 export default function TopBar({ showScanAgain = false }) {
@@ -11,8 +11,9 @@ export default function TopBar({ showScanAgain = false }) {
       <nav className={showScanAgain ? 'topbar-actions' : undefined} aria-label="Primary navigation">
         {showScanAgain && (
           <Link to="/" className="topbar-scan-again">
+            <RefreshCw className="topbar-scan-again-icon" aria-hidden="true" />
             <span>SCAN AGAIN</span>
-            <span aria-hidden="true">↗</span>
+            <span className="topbar-scan-again-arrow" aria-hidden="true"><ExternalLink /></span>
           </Link>
         )}
         <Link to="/history" className="topbar-nav-link" aria-label="Open scan history">
