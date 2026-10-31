@@ -17,6 +17,11 @@ class ScanResult(TypedDict):
     twitter: bool
     instagram: bool
     linkedin: bool
+    facebook: bool
+    youtube: bool
+    tiktok: bool
+    threads: bool
+    telegram: bool
 
 
 class SherlockScanError(RuntimeError):
@@ -37,6 +42,23 @@ PLATFORM_NAMES = {
     "Twitter": "twitter",
     "Instagram": "instagram",
     "LinkedIn": "linkedin",
+    "Facebook": "facebook",
+    "YouTube": "youtube",
+    "TikTok": "tiktok",
+    "Threads": "threads",
+    "Telegram": "telegram",
+}
+PLATFORM_URL_PATTERNS = {
+    "github": "https://github.com/{username}",
+    "reddit": "https://www.reddit.com/user/{username}",
+    "twitter": "https://x.com/{username}",
+    "instagram": "https://www.instagram.com/{username}",
+    "linkedin": "https://www.linkedin.com/in/{username}",
+    "facebook": "https://www.facebook.com/{username}",
+    "youtube": "https://www.youtube.com/@{username}",
+    "tiktok": "https://www.tiktok.com/@{username}",
+    "threads": "https://www.threads.net/@{username}",
+    "telegram": "https://t.me/{username}",
 }
 FOUND_RESULT_PATTERN = re.compile(r"^\[\+\]\s+(?P<platform>[^:]+):\s+\S+", re.MULTILINE)
 
@@ -50,6 +72,11 @@ def _parse_sherlock_output(output: str) -> ScanResult:
         "twitter": False,
         "instagram": False,
         "linkedin": False,
+        "facebook": False,
+        "youtube": False,
+        "tiktok": False,
+        "threads": False,
+        "telegram": False,
     }
     for match in FOUND_RESULT_PATTERN.finditer(output):
         platform = PLATFORM_NAMES.get(match.group("platform").strip())

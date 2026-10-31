@@ -56,6 +56,13 @@ export default function ScanForm() {
         </button>
       </div>
       <div id="scan-error" className="mt-3 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
+      {loading && (
+        <div className="scan-skeleton" aria-label="Preparing intelligence report" aria-live="polite">
+          <span className="scan-skeleton-line scan-skeleton-line-wide" />
+          <span className="scan-skeleton-line" />
+          <span className="scan-skeleton-line scan-skeleton-line-short" />
+        </div>
+      )}
     </form>
   )
 }

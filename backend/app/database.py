@@ -34,6 +34,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
+        if connection.dialect.name == "postgresql":
+            for column in ("facebook", "youtube", "tiktok", "threads", "telegram"):
+                await connection.execute(
+                    text(
+                        f"ALTER TABLE scans ADD COLUMN IF NOT EXISTS "
+                        f"{column} BOOLEAN NOT NULL DEFAULT FALSE"
+                    )
+                )
 
     app.state.database_engine = engine
     try:

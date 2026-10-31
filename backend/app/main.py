@@ -153,5 +153,5 @@ async def root() -> dict[str, str]:
     return {
         "project": "Ghost Profile Generator",
         "status": "running",
-        "version": "1.0",
+        "version": "2.0",
     }

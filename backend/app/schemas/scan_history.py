@@ -20,6 +20,11 @@ class ScanHistoryResponse(BaseModel):
     twitter: bool
     instagram: bool
     linkedin: bool
+    facebook: bool
+    youtube: bool
+    tiktok: bool
+    threads: bool
+    telegram: bool
     risk_score: int = Field(ge=0, le=100)
     risk_level: RiskLevel
     created_at: datetime

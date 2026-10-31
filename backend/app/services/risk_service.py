@@ -4,11 +4,16 @@ from app.schemas.scan import RiskLevel
 from app.services.scan_service import ScanResult
 
 PLATFORM_WEIGHTS: dict[str, int] = {
-    "github": 20,
-    "twitter": 20,
-    "instagram": 30,
-    "reddit": 15,
-    "linkedin": 15,
+    "github": 10,
+    "reddit": 10,
+    "twitter": 10,
+    "instagram": 10,
+    "linkedin": 10,
+    "facebook": 10,
+    "youtube": 10,
+    "tiktok": 10,
+    "threads": 10,
+    "telegram": 10,
 }
 
 

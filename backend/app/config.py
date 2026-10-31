@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     """Runtime configuration for the API."""
 
     app_name: str = "Ghost Profile Generator API"
-    app_version: str = "0.1.0"
+    app_version: str = "2.0.0"
     environment: str = "development"
     debug: bool = False
 

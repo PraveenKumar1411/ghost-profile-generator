@@ -1,16 +1,61 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import TopBar from '../components/TopBar'
 import PlatformCard from '../components/PlatformCard'
 import { downloadReport, getApiErrorMessage } from '../services/scanApi'
 
-const PLATFORMS = ['github', 'reddit', 'twitter', 'instagram', 'linkedin']
+const PLATFORMS = ['github', 'reddit', 'twitter', 'instagram', 'linkedin', 'facebook', 'youtube', 'tiktok', 'threads', 'telegram']
 const RECOMMENDATIONS = [
   { title: 'Enable MFA', detail: 'Add a second layer of protection to every account.' },
   { title: 'Hide Public Email', detail: 'Reduce the chance of targeted phishing attempts.' },
   { title: 'Review Social Privacy Settings', detail: 'Limit profile details to trusted connections.' },
   { title: 'Avoid Public Data Exposure', detail: 'Remove identifiers that are not essential to share.' },
 ]
+
+const THREAT_SUMMARIES = {
+  LOW: {
+    title: 'Low Exposure',
+    detail: 'Few public signals were discovered. Continue reviewing new profiles before sharing sensitive details.',
+  },
+  MEDIUM: {
+    title: 'Moderate Exposure',
+    detail: 'Several public signals are connected to this identity. Strengthen account security and reduce unnecessary visibility.',
+  },
+  HIGH: {
+    title: 'High Exposure',
+    detail: 'This identity has a broad public footprint. Prioritize MFA, privacy reviews, and removal of redundant identifiers.',
+  },
+  CRITICAL: {
+    title: 'Critical Exposure',
+    detail: 'A very broad footprint is visible. Treat this identity as high priority for account hardening and exposure reduction.',
+  },
+}
+
+function AnimatedMetric({ value, label, tone }) {
+  const numericValue = typeof value === 'number' ? value : null
+  const [displayValue, setDisplayValue] = useState(numericValue === null ? value : 0)
+
+  useEffect(() => {
+    if (numericValue === null) return undefined
+    const start = window.performance.now()
+    const duration = 650
+    let frame
+    function animate(now) {
+      const progress = Math.min((now - start) / duration, 1)
+      setDisplayValue(Math.round(numericValue * progress))
+      if (progress < 1) frame = window.requestAnimationFrame(animate)
+    }
+    frame = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frame)
+  }, [numericValue])
+
+  return (
+    <div className={`exposure-metric exposure-metric-${tone}`}>
+      <strong>{displayValue}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
 
 function RiskMeter({ score, level }) {
   const circumference = 2 * Math.PI * 50
@@ -52,6 +97,8 @@ export default function ResultsPage() {
   const found = PLATFORMS.filter((platform) => result[platform])
   const missing = PLATFORMS.filter((platform) => !result[platform])
   const riskLevel = result.risk_level?.toUpperCase() ?? 'UNKNOWN'
+  const threatKey = result.risk_score >= 80 ? 'CRITICAL' : riskLevel
+  const threat = THREAT_SUMMARIES[threatKey] ?? THREAT_SUMMARIES.LOW
 
   async function handleDownload() {
     setDownloading(true)
@@ -111,7 +158,7 @@ export default function ResultsPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PLATFORMS.map((platform, index) => (
-              <PlatformCard key={platform} platform={platform} present={result[platform]} index={index} />
+            <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} index={index} />
             ))}
           </div>
         </section>
@@ -121,13 +168,23 @@ export default function ResultsPage() {
             <p className="section-kicker">03 / exposure summary</p>
             <h2 className="section-title mt-2">Surface area at a glance</h2>
             <div className="summary-metrics">
-              <div><strong>{found.length}</strong><span>Platforms found</span><i className="metric-bar metric-bar-cyan" /></div>
-              <div><strong>{missing.length}</strong><span>Platforms missing</span><i className="metric-bar metric-bar-purple" /></div>
+              <AnimatedMetric value={found.length} label="Platforms found" tone="found" />
+              <AnimatedMetric value={missing.length} label="Platforms missing" tone="missing" />
+              <AnimatedMetric value={PLATFORMS.length} label="Total platforms" tone="total" />
+              <AnimatedMetric value={riskLevel} label="Risk rating" tone="risk" />
             </div>
             <p className="summary-note">Every public profile is a potential signal. Keep only the information you intend to be discoverable.</p>
           </div>
+          <div className="glass-card threat-card">
+            <p className="section-kicker">04 / threat intelligence</p>
+            <h2 className="section-title mt-2">Threat Intelligence Summary</h2>
+            <div className={`threat-callout threat-callout-${riskLevel.toLowerCase()}`}>
+              <span className="threat-pulse" />
+              <div><strong>{threat.title}</strong><p>{threat.detail}</p></div>
+            </div>
+          </div>
           <div className="glass-card recommendations-card">
-            <p className="section-kicker">04 / security recommendations</p>
+            <p className="section-kicker">05 / security recommendations</p>
             <h2 className="section-title mt-2">Harden your presence</h2>
             <div className="recommendation-grid">
               {RECOMMENDATIONS.map(({ title, detail }) => (
@@ -141,7 +198,7 @@ export default function ResultsPage() {
         </section>
 
         <section className="action-panel">
-          <div><p className="section-kicker">05 / next action</p><h2 className="section-title mt-2">Keep your identity in your control.</h2></div>
+          <div><p className="section-kicker">06 / next action</p><h2 className="section-title mt-2">Keep your identity in your control.</h2></div>
           <div className="action-buttons">
             <button type="button" onClick={handleDownload} disabled={downloading} className="button-primary report-button">
               {downloading ? <><span className="spinner" /> generating...</> : <>download PDF report <span>↓</span></>}

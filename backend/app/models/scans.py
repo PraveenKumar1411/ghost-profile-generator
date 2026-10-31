@@ -29,6 +29,11 @@ class Scan(Base):
     twitter: Mapped[bool] = mapped_column(Boolean, nullable=False)
     instagram: Mapped[bool] = mapped_column(Boolean, nullable=False)
     linkedin: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    facebook: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    youtube: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tiktok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    threads: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    telegram: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
     risk_level: Mapped[str] = mapped_column(String(10), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

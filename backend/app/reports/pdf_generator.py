@@ -26,6 +26,22 @@ PLATFORM_LABELS: dict[str, str] = {
     "twitter": "Twitter",
     "instagram": "Instagram",
     "linkedin": "LinkedIn",
+    "facebook": "Facebook",
+    "youtube": "YouTube",
+    "tiktok": "TikTok",
+    "threads": "Threads",
+    "telegram": "Telegram",
+}
+PLATFORM_MARKS: dict[str, str] = {
+    "github": "GH", "reddit": "R", "twitter": "X", "instagram": "IG",
+    "linkedin": "in", "facebook": "f", "youtube": "YT", "tiktok": "TT",
+    "threads": "@", "telegram": "TG",
+}
+PLATFORM_COLORS: dict[str, str] = {
+    "github": "#6e7681", "reddit": "#FF4500", "twitter": "#111827",
+    "instagram": "#dd2a7b", "linkedin": "#0A66C2", "facebook": "#1877F2",
+    "youtube": "#FF0000", "tiktok": "#00F2EA", "threads": "#111827",
+    "telegram": "#229ED9",
 }
 
 RECOMMENDATIONS: dict[RiskLevel, tuple[str, ...]] = {
@@ -45,6 +61,16 @@ def _recommendations(risk_level: RiskLevel) -> list[str]:
     """Return recommendations configured for a risk level."""
 
     return list(RECOMMENDATIONS[risk_level])
+
+
+def _threat_summary(risk_level: RiskLevel) -> str:
+    """Return a concise threat summary for the report."""
+
+    return {
+        "LOW": "Low Exposure - Few public signals were discovered. Continue reviewing new profiles before sharing sensitive details.",
+        "MEDIUM": "Moderate Exposure - Several public signals are connected to this identity. Strengthen account security and reduce unnecessary visibility.",
+        "HIGH": "High Exposure - This identity has a broad public footprint. Prioritize MFA, privacy reviews, and removal of redundant identifiers.",
+    }[risk_level]
 
 
 def generate_pdf_report(
@@ -125,6 +151,9 @@ def generate_pdf_report(
         ["Scan date", generated_at.strftime("%Y-%m-%d %H:%M %Z")],
         ["Risk score", f"{scan.risk_score} / 100"],
         ["Risk level", scan.risk_level],
+        ["Platforms scanned", str(len(PLATFORM_LABELS))],
+        ["Platforms found", str(len(found))],
+        ["Platforms missing", str(len(missing))],
     ]
     summary_table = Table(summary, colWidths=[42 * mm, 118 * mm])
     summary_table.setStyle(
@@ -145,6 +174,38 @@ def generate_pdf_report(
     )
     story.append(summary_table)
 
+    story.append(Paragraph("Threat intelligence summary", styles["SectionHeading"]))
+    story.append(Paragraph(_threat_summary(scan.risk_level), styles["Body"]))
+    story.append(Paragraph("Platform signal map", styles["SectionHeading"]))
+    platform_rows = [["Logo", "Platform", "Public signal"]]
+    for field, label in PLATFORM_LABELS.items():
+        platform_rows.append([
+            Paragraph(
+                f'<font color="{PLATFORM_COLORS[field]}"><b>{PLATFORM_MARKS[field]}</b></font>',
+                styles["Body"],
+            ),
+            label,
+            "FOUND" if getattr(scan, field) else "NOT FOUND",
+        ])
+    platform_table = Table(platform_rows, colWidths=[18 * mm, 82 * mm, 60 * mm])
+    platform_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#12304a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("TEXTCOLOR", (1, 1), (1, -1), colors.HexColor("#334155")),
+                ("TEXTCOLOR", (2, 1), (2, -1), colors.HexColor("#0f766e")),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#cbd5e1")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(platform_table)
     story.append(Paragraph("Platforms found", styles["SectionHeading"]))
     story.append(
         Paragraph(

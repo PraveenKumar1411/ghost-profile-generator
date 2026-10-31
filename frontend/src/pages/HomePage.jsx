@@ -46,7 +46,7 @@ export default function HomePage() {
             </div>
             <span className="absolute -left-4 top-1/2 font-mono text-[9px] text-slate-600">TRACE / 01</span>
             <span className="absolute -right-4 top-1/4 font-mono text-[9px] text-cyan/60">LIVE SCAN</span>
-            <span className="absolute bottom-1 right-6 font-mono text-[9px] text-violet-300/60">NODES: 05</span>
+            <span className="absolute bottom-1 right-6 font-mono text-[9px] text-violet-300/60">NODES: 10</span>
             </div>
           </div>
         </div>
