@@ -21,7 +21,7 @@ export default function TopBar({ showScanAgain = false }) {
         {showScanAgain && (
           <Link to="/" className="topbar-scan-again">
             <RefreshCw className="topbar-scan-again-icon" aria-hidden="true" />
-            <span>SCAN AGAIN</span>
+            <span className="topbar-scan-again-copy"><span>SCAN</span> <strong>AGAIN</strong></span>
             <span className="topbar-scan-again-arrow" aria-hidden="true"><ExternalLink /></span>
           </Link>
         )}
