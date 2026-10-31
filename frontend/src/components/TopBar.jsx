@@ -9,6 +9,13 @@ export default function TopBar({ showScanAgain = false }) {
         <Logo />
       </Link>
       <nav className={showScanAgain ? 'topbar-actions' : undefined} aria-label="Primary navigation">
+        {showScanAgain && (
+          <Link to="/" className="topbar-scan-again">
+            <RefreshCw className="topbar-scan-again-icon" aria-hidden="true" />
+            <span className="topbar-scan-again-copy"><span>SCAN</span> <strong>AGAIN</strong></span>
+            <span className="topbar-scan-again-arrow" aria-hidden="true"><ExternalLink /></span>
+          </Link>
+        )}
         <Link to="/history" className="topbar-nav-link" aria-label="Open scan history">
           <span className="topbar-nav-leading">
             <History className="topbar-nav-icon" aria-hidden="true" />
@@ -18,13 +25,6 @@ export default function TopBar({ showScanAgain = false }) {
           <span className="topbar-nav-copy"><span>SCAN</span> <strong>HISTORY</strong></span>
           <span className="topbar-nav-arrow" aria-hidden="true"><ExternalLink /></span>
         </Link>
-        {showScanAgain && (
-          <Link to="/" className="topbar-scan-again">
-            <RefreshCw className="topbar-scan-again-icon" aria-hidden="true" />
-            <span className="topbar-scan-again-copy"><span>SCAN</span> <strong>AGAIN</strong></span>
-            <span className="topbar-scan-again-arrow" aria-hidden="true"><ExternalLink /></span>
-          </Link>
-        )}
       </nav>
     </header>
   )
