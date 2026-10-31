@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import TopBar from '../components/TopBar'
 import PlatformCard from '../components/PlatformCard'
+import ExposureCharts from '../components/ExposureCharts'
+import SystemStatusPanel from '../components/SystemStatusPanel'
 import { downloadReport, getApiErrorMessage } from '../services/scanApi'
 
 const PLATFORMS = ['github', 'reddit', 'twitter', 'instagram', 'linkedin', 'facebook', 'youtube', 'tiktok', 'threads', 'telegram']
-const RECOMMENDATIONS = [
+const FALLBACK_RECOMMENDATIONS = [
   { title: 'Enable MFA', detail: 'Add a second layer of protection to every account.' },
   { title: 'Hide Public Email', detail: 'Reduce the chance of targeted phishing attempts.' },
   { title: 'Review Social Privacy Settings', detail: 'Limit profile details to trusted connections.' },
@@ -87,6 +89,7 @@ export default function ResultsPage() {
   const result = state?.result
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState('')
+  const [copiedPlatform, setCopiedPlatform] = useState('')
   const [scanTimestamp] = useState(() => new Intl.DateTimeFormat([], {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -99,12 +102,23 @@ export default function ResultsPage() {
   const riskLevel = result.risk_level?.toUpperCase() ?? 'UNKNOWN'
   const threatKey = result.risk_score >= 80 ? 'CRITICAL' : riskLevel
   const threat = THREAT_SUMMARIES[threatKey] ?? THREAT_SUMMARIES.LOW
+  const recommendations = result.recommendations?.length
+    ? result.recommendations.map((detail) => ({ title: detail, detail: 'Recommended privacy action for this exposure profile.' }))
+    : FALLBACK_RECOMMENDATIONS
+  const previousScore = result.previous_risk_score ?? state?.previousScore
+  const exposureChange = typeof previousScore === 'number' ? result.risk_score - previousScore : null
+
+  async function handleCopy(url, platform) {
+    await navigator.clipboard.writeText(url)
+    setCopiedPlatform(platform)
+    window.setTimeout(() => setCopiedPlatform(''), 1600)
+  }
 
   async function handleDownload() {
     setDownloading(true)
     setDownloadError('')
     try {
-      const pdf = await downloadReport(result.username)
+      const pdf = await downloadReport(result.report_id ?? result.username, Boolean(result.report_id))
       const url = URL.createObjectURL(pdf)
       const link = document.createElement('a')
       link.href = url
@@ -147,6 +161,7 @@ export default function ResultsPage() {
               <span className="h-2 w-2 rounded-full bg-current shadow-[0_0_12px_currentColor]" />
               {riskLevel} RISK
             </div>
+            <div className="grade-badge"><span>Privacy grade</span><strong>{result.privacy_grade ?? 'N/A'}</strong></div>
           </div>
           <RiskMeter score={result.risk_score} level={riskLevel} />
         </section>
@@ -158,7 +173,7 @@ export default function ResultsPage() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PLATFORMS.map((platform, index) => (
-            <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} index={index} />
+            <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} onCopy={handleCopy} copied={copiedPlatform === platform} index={index} />
             ))}
           </div>
         </section>
@@ -187,7 +202,7 @@ export default function ResultsPage() {
             <p className="section-kicker">05 / security recommendations</p>
             <h2 className="section-title mt-2">Harden your presence</h2>
             <div className="recommendation-grid">
-              {RECOMMENDATIONS.map(({ title, detail }) => (
+              {recommendations.map(({ title, detail }) => (
                 <div className="recommendation-card" key={title}>
                   <span className="recommendation-icon">✓</span>
                   <div><strong>{title}</strong><p>{detail}</p></div>
@@ -196,6 +211,13 @@ export default function ResultsPage() {
             </div>
           </div>
         </section>
+
+        <ExposureCharts found={found.length} missing={missing.length} categories={result.category_exposure ?? {}} />
+        <section className="insight-row">
+          <div className="glass-card insight-card"><p className="section-kicker">09 / OSINT insight engine</p><h2 className="section-title mt-2">Signal interpretation</h2><p>{result.insight || threat.detail}</p></div>
+          <div className="glass-card insight-card"><p className="section-kicker">10 / exposure trend</p><h2 className="section-title mt-2">Change since previous scan</h2><strong className={`trend-value ${exposureChange > 0 ? 'trend-up' : 'trend-down'}`}>{exposureChange === null ? '—' : `${exposureChange > 0 ? '+' : ''}${exposureChange}`}</strong><p>{previousScore === undefined ? 'Run another scan to compare exposure over time.' : `Previous: ${previousScore} · Current: ${result.risk_score}`}</p></div>
+        </section>
+        <SystemStatusPanel />
 
         <section className="action-panel">
           <div><p className="section-kicker">06 / next action</p><h2 className="section-title mt-2">Keep your identity in your control.</h2></div>

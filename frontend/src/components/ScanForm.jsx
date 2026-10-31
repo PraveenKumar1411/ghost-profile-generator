@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getApiErrorMessage, scanUsername } from '../services/scanApi'
+import { getApiErrorMessage, getScanResult, getScanStatus, startScan } from '../services/scanApi'
+import ScanProgress from './ScanProgress'
 
 const USERNAME_PATTERN = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,38}$/
 
@@ -9,6 +10,7 @@ export default function ScanForm() {
   const [username, setUsername] = useState('')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('idle')
+  const [job, setJob] = useState(null)
   const loading = status === 'loading'
 
   async function handleSubmit(event) {
@@ -22,12 +24,28 @@ export default function ScanForm() {
     setError('')
     setStatus('loading')
     try {
-      const result = await scanUsername(value)
+      const started = await startScan(value)
+      setJob({ scanId: started.scan_id, progress: 0, status: started.status })
+      const result = await waitForScan(started.scan_id)
       setStatus('success')
       window.setTimeout(() => navigate('/results', { state: { result } }), 450)
     } catch (requestError) {
       setError(getApiErrorMessage(requestError))
       setStatus('idle')
+    }
+
+    async function waitForScan(scanId) {
+      while (true) {
+        const snapshot = await getScanStatus(scanId)
+        setJob({ ...snapshot, scanId })
+        if (snapshot.status === 'failed') {
+          throw new Error(snapshot.failure_reason || 'The background scan failed.')
+        }
+        if (snapshot.status === 'completed') {
+          return getScanResult(scanId)
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 2000))
+      }
     }
   }
 
@@ -52,17 +70,27 @@ export default function ScanForm() {
           />
         </div>
         <button type="submit" disabled={loading || status === 'success'} className="button-primary min-w-40">
-          {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : <>scan identity <span aria-hidden="true">→</span></>}
+          {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
         </button>
       </div>
       <div id="scan-error" className="mt-3 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
-      {loading && (
-        <div className="scan-skeleton" aria-label="Preparing intelligence report" aria-live="polite">
-          <span className="scan-skeleton-line scan-skeleton-line-wide" />
-          <span className="scan-skeleton-line" />
-          <span className="scan-skeleton-line scan-skeleton-line-short" />
+      {job?.status === 'failed' && (
+        <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-xs text-rose-200">
+          <span>Scan failed. You can retry this identity.</span>
+          <button type="button" className="font-mono text-[10px] uppercase tracking-wider text-rose-300 hover:text-white" onClick={() => { setJob(null); setError(''); setStatus('idle') }}>
+            Retry
+          </button>
         </div>
       )}
+      <ScanProgress
+        active={loading}
+        complete={status === 'success'}
+        progress={job?.progress}
+        scanId={job?.scanId}
+        currentPlatform={job?.current_platform}
+        completedPlatforms={job?.completed_platforms}
+        remainingPlatforms={job?.remaining_platforms}
+      />
     </form>
   )
 }

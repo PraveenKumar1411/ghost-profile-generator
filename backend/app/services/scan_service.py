@@ -4,6 +4,7 @@ import asyncio
 import re
 import subprocess
 import sys
+from collections.abc import Awaitable, Callable
 from typing import TypedDict
 
 from app.config import get_settings
@@ -126,3 +127,66 @@ async def scan_username(username: str) -> ScanResult:
             f"Sherlock failed to complete the scan: {error or 'unknown error'}"
         )
     return _parse_sherlock_output(completed_process.stdout)
+
+
+async def scan_username_with_progress(
+    username: str,
+    on_platform_complete: Callable[[str, bool], Awaitable[None]],
+) -> ScanResult:
+    """Run one Sherlock site at a time and report durable progress checkpoints."""
+
+    settings = get_settings()
+    result: ScanResult = {
+        "github": False,
+        "reddit": False,
+        "twitter": False,
+        "instagram": False,
+        "linkedin": False,
+        "facebook": False,
+        "youtube": False,
+        "tiktok": False,
+        "threads": False,
+        "telegram": False,
+    }
+
+    for display_name, platform_key in PLATFORM_NAMES.items():
+        command = [
+            sys.executable,
+            "-m",
+            "sherlock_project.sherlock",
+            username,
+            "--no-color",
+            "--print-found",
+            "--timeout",
+            str(settings.sherlock_request_timeout),
+            "--site",
+            display_name,
+        ]
+        try:
+            completed_process = await asyncio.to_thread(
+                subprocess.run,
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=settings.sherlock_process_timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise SherlockTimeoutError(
+                f"Sherlock timed out while checking {display_name}"
+            ) from exc
+        except (FileNotFoundError, OSError) as exc:
+            raise SherlockUnavailableError(
+                "Sherlock is not available in the backend environment"
+            ) from exc
+
+        if completed_process.returncode not in (0, 1):
+            error = completed_process.stderr.strip()
+            raise SherlockUnavailableError(
+                f"Sherlock failed for {display_name}: {error or 'unknown error'}"
+            )
+        found = _parse_sherlock_output(completed_process.stdout)[platform_key]
+        result[platform_key] = found
+        await on_platform_complete(display_name, found)
+
+    return result

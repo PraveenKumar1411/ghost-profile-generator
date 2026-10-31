@@ -1,7 +1,20 @@
+import { useNavigate } from 'react-router-dom'
 import TopBar from '../components/TopBar'
 import ScanForm from '../components/ScanForm'
+import SystemStatusPanel from '../components/SystemStatusPanel'
+
+const DEMO_RESULT = {
+  username: 'alex.morgan',
+  github: true, reddit: true, twitter: false, instagram: true, linkedin: true,
+  facebook: false, youtube: true, tiktok: false, threads: true, telegram: true,
+  risk_score: 60, risk_level: 'MEDIUM', privacy_grade: 'D', report_id: 'GPG-DEMO-00001',
+  recommendations: ['Review social media visibility', 'Hide public contact details', 'Limit profile discoverability'],
+  insight: 'This username appears on multiple public platforms.',
+  category_exposure: { social: true, professional: true, developer: true, messaging: true, content: true },
+}
 
 export default function HomePage() {
+  const navigate = useNavigate()
   return (
     <div className="app-shell">
       <TopBar />
@@ -19,6 +32,7 @@ export default function HomePage() {
               Find the <span className="text-gradient">ghost</span><br className="hidden sm:block" /> behind a username.
             </h1>
             <div className="mt-6"><ScanForm /></div>
+            <button type="button" className="demo-scan-button" onClick={() => navigate('/results', { state: { result: DEMO_RESULT } })}>Demo scan <span>↗</span></button>
             <p className="mt-4 max-w-lg text-sm leading-6 text-slate-400 sm:text-base">
               Map public profiles across the internet. Turn scattered signals into a clear, privacy-first intelligence brief.
             </p>
@@ -28,6 +42,11 @@ export default function HomePage() {
               ))}
             </div>
             <p className="mt-5 font-mono text-[10px] uppercase tracking-widest text-slate-600">encrypted request · no data stored</p>
+            <div className="landing-stats">
+              <div><strong>10</strong><span>Platforms monitored</span></div>
+              <div><strong>24/7</strong><span>Threat intelligence</span></div>
+              <div><strong>PDF</strong><span>Professional reports</span></div>
+            </div>
           </section>
           <div className="cyber-visual relative mx-auto hidden h-[29rem] w-[25rem] lg:block" aria-label="Live cyber intelligence visualization">
             <div className="visual-status">
@@ -50,6 +69,7 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+        <SystemStatusPanel />
       </main>
     </div>
   )

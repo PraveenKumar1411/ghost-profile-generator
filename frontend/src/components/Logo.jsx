@@ -5,7 +5,7 @@ export default function Logo({ compact = false }) {
       {!compact && (
         <div>
           <p className="text-sm font-semibold tracking-tight text-slate-100">GHOST<span className="text-cyan">.</span></p>
-          <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.22em] text-slate-500">profile generator</p>
+          <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.22em] text-slate-500">intelligence platform</p>
         </div>
       )}
     </div>

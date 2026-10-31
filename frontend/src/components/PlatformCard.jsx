@@ -15,7 +15,7 @@ const PLATFORM_META = {
   telegram: { label: 'Telegram', icon: FaTelegram, color: '#229ED9', url: (username) => `https://t.me/${username}` },
 }
 
-export default function PlatformCard({ platform, present, username, index = 0 }) {
+export default function PlatformCard({ platform, present, username, onCopy, copied, index = 0 }) {
   const meta = PLATFORM_META[platform]
   const Icon = meta.icon
   const profileUrl = meta.url(username)
@@ -39,9 +39,14 @@ export default function PlatformCard({ platform, present, username, index = 0 })
           <span className="status-dot" /> {present ? 'Found' : 'Not found'}
         </span>
         {present && (
-          <a className="open-profile-link" href={profileUrl} target="_blank" rel="noreferrer">
-            Open profile <span aria-hidden="true">↗</span>
-          </a>
+          <div className="profile-actions">
+            <a className="open-profile-link" href={profileUrl} target="_blank" rel="noreferrer">
+              Open profile <span aria-hidden="true">↗</span>
+            </a>
+            <button type="button" className="copy-profile-button" onClick={() => onCopy(profileUrl, platform)}>
+              {copied ? 'Copied' : 'Copy URL'}
+            </button>
+          </div>
         )}
       </div>
     </article>

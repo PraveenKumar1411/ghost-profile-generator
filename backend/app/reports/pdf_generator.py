@@ -17,6 +17,8 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.graphics.barcode import qr
+from reportlab.graphics.shapes import Drawing
 
 from app.schemas.scan import RiskLevel, ScanResponse
 
@@ -45,13 +47,21 @@ PLATFORM_COLORS: dict[str, str] = {
 }
 
 RECOMMENDATIONS: dict[RiskLevel, tuple[str, ...]] = {
-    "LOW": ("Continue good privacy practices",),
-    "MEDIUM": ("Enable MFA", "Review public profiles"),
+    "LOW": ("Great privacy posture", "Continue using MFA", "Avoid reusing usernames"),
+    "MEDIUM": (
+        "Review social media visibility",
+        "Hide public contact details",
+        "Limit profile discoverability",
+    ),
     "HIGH": (
-        "Enable MFA",
-        "Hide public email",
-        "Restrict social profile visibility",
-        "Review privacy settings",
+        "Enable 2FA immediately",
+        "Remove public email addresses",
+        "Separate personal and professional identities",
+    ),
+    "CRITICAL": (
+        "Review all public accounts",
+        "Audit all exposed information",
+        "Create unique usernames per platform",
     ),
 }
 LOGO_PATH = Path(__file__).with_name("ghost-logo.png")
@@ -70,6 +80,7 @@ def _threat_summary(risk_level: RiskLevel) -> str:
         "LOW": "Low Exposure - Few public signals were discovered. Continue reviewing new profiles before sharing sensitive details.",
         "MEDIUM": "Moderate Exposure - Several public signals are connected to this identity. Strengthen account security and reduce unnecessary visibility.",
         "HIGH": "High Exposure - This identity has a broad public footprint. Prioritize MFA, privacy reviews, and removal of redundant identifiers.",
+        "CRITICAL": "Critical Exposure - A very broad footprint is visible. Treat this identity as high priority for account hardening and exposure reduction.",
     }[risk_level]
 
 
@@ -117,6 +128,17 @@ def generate_pdf_report(
     )
     styles.add(
         ParagraphStyle(
+            name="CoverSubtitle",
+            parent=styles["BodyText"],
+            alignment=TA_CENTER,
+            fontSize=12,
+            leading=18,
+            textColor=colors.HexColor("#475569"),
+            spaceAfter=12,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
             name="SectionHeading",
             parent=styles["Heading2"],
             fontSize=13,
@@ -142,7 +164,8 @@ def generate_pdf_report(
         logo,
         Spacer(1, 4),
         Paragraph("Ghost Profile Generator", styles["ReportTitle"]),
-        Paragraph("Digital Footprint Report", styles["Heading2"]),
+        Paragraph("Ghost Intelligence Platform", styles["Heading2"]),
+        Paragraph("Enterprise digital footprint and privacy intelligence report", styles["CoverSubtitle"]),
         Spacer(1, 6),
     ]
 
@@ -151,6 +174,8 @@ def generate_pdf_report(
         ["Scan date", generated_at.strftime("%Y-%m-%d %H:%M %Z")],
         ["Risk score", f"{scan.risk_score} / 100"],
         ["Risk level", scan.risk_level],
+        ["Privacy grade", scan.privacy_grade],
+        ["Report ID", scan.report_id or "Unavailable"],
         ["Platforms scanned", str(len(PLATFORM_LABELS))],
         ["Platforms found", str(len(found))],
         ["Platforms missing", str(len(missing))],
@@ -173,6 +198,17 @@ def generate_pdf_report(
         )
     )
     story.append(summary_table)
+    story.append(Spacer(1, 10))
+    qr_value = scan.report_id or scan.username
+    qr_code = qr.QrCodeWidget(
+        f"https://ghost-profile-generator.vercel.app/?report={qr_value}"
+    )
+    qr_code.barWidth = 28 * mm
+    qr_code.barHeight = 28 * mm
+    qr_drawing = Drawing(32 * mm, 32 * mm)
+    qr_drawing.add(qr_code)
+    qr_drawing.hAlign = "RIGHT"
+    story.append(qr_drawing)
 
     story.append(Paragraph("Threat intelligence summary", styles["SectionHeading"]))
     story.append(Paragraph(_threat_summary(scan.risk_level), styles["Body"]))

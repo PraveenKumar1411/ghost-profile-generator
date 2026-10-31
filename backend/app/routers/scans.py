@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db_session
 from app.schemas.scan_history import ScanHistoryResponse
-from app.services.scan_history_service import get_scan, list_scans
+from app.services.scan_history_service import (
+    get_scan,
+    get_scan_analytics,
+    list_scans,
+)
 
 router = APIRouter(prefix="/scans", tags=["scan history"])
 DatabaseSession = Annotated[AsyncSession, Depends(get_db_session)]
@@ -46,3 +50,13 @@ async def get_scan_by_id(
             detail="Scan not found",
         )
     return scan
+
+
+@router.get(
+    "/analytics/summary",
+    summary="Return aggregate scan analytics",
+)
+async def get_analytics(session: DatabaseSession) -> dict[str, object]:
+    """Return dashboard metrics for persisted scans."""
+
+    return await get_scan_analytics(session)
