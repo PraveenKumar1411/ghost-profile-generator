@@ -28,6 +28,13 @@ class Settings(BaseSettings):
         le=600,
     )
 
+    scan_platform_timeout: int = Field(
+        default=10,
+        alias="SCAN_PLATFORM_TIMEOUT",
+        ge=1,
+        le=120,
+    )
+
     database_url: str = Field(
         default="postgresql+asyncpg://postgres:YOUR_PASSWORD@localhost:5433/ghost_profile_generator",
         alias="DATABASE_URL",

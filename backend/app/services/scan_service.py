@@ -6,6 +6,8 @@ import re
 import subprocess
 import sys
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from time import perf_counter
 from typing import Literal, TypedDict
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -588,65 +590,12 @@ def _apply_platform_result(
 
 
 async def scan_username(username: str) -> ScanResult:
-    """Run Sherlock for a username and return supported platform matches."""
+    """Run a bounded platform-by-platform scan for a username."""
 
-    settings = get_settings()
-    command = [
-        sys.executable,
-        "-m",
-        "sherlock_project.sherlock",
-        username,
-        "--no-color",
-        "--print-found",
-        "--timeout",
-        str(settings.sherlock_request_timeout),
-    ]
-    for site_name in SHERLOCK_SITE_NAMES.values():
-        if site_name is not None:
-            command.extend(["--site", site_name])
+    async def ignore_progress(_: str, __: bool) -> None:
+        return None
 
-    result = _empty_scan_result()
-    sherlock_reason: str | None = None
-    try:
-        completed_process = await asyncio.to_thread(
-            subprocess.run,
-            command,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=settings.sherlock_process_timeout,
-        )
-    except subprocess.TimeoutExpired:
-        sherlock_reason = "Sherlock scan timeout"
-    except (FileNotFoundError, OSError) as exc:
-        sherlock_reason = f"Sherlock unavailable: {exc}"
-
-    if sherlock_reason is None and completed_process.returncode in (0, 1):
-        print(f"Sherlock stdout:\n{completed_process.stdout}")
-        print(f"Sherlock stderr:\n{completed_process.stderr}")
-        result = _parse_sherlock_output(completed_process.stdout)
-        for platform_key in PLATFORM_NAMES.values():
-            if result["verification_status"][platform_key] != "FOUND":
-                _apply_platform_result(result, platform_key, "NOT_FOUND")
-    elif sherlock_reason is None:
-        sherlock_reason = (
-            f"Sherlock failed with process status {completed_process.returncode}"
-        )
-
-    if sherlock_reason:
-        for platform_key in PLATFORM_NAMES.values():
-            _apply_platform_result(result, platform_key, "UNVERIFIED", sherlock_reason)
-
-    for platform_key in FALLBACK_PLATFORM_KEYS:
-        if result["verification_status"][platform_key] != "FOUND":
-            detected, reason = await _detect_unsupported_platform(
-                platform_key,
-                username,
-                settings.sherlock_request_timeout,
-            )
-            _apply_platform_result(result, platform_key, detected, reason)
-    print(f"Final scan result: {result}")
-    return result
+    return await scan_username_with_progress(username, ignore_progress)
 
 
 async def scan_username_with_progress(
@@ -659,70 +608,117 @@ async def scan_username_with_progress(
     result = _empty_scan_result()
 
     for display_name, platform_key in PLATFORM_NAMES.items():
-        site_name = SHERLOCK_SITE_NAMES[display_name]
-        if site_name is None:
-            platform_status, reason = await _detect_unsupported_platform(
-                platform_key,
-                username,
-                settings.sherlock_request_timeout,
-            )
-            _apply_platform_result(result, platform_key, platform_status, reason)
-            await on_platform_complete(display_name, platform_status == "FOUND")
-            continue
-        command = [
-            sys.executable,
-            "-m",
-            "sherlock_project.sherlock",
-            username,
-            "--no-color",
-            "--print-found",
-            "--timeout",
-            str(settings.sherlock_request_timeout),
-            "--site",
-            site_name,
-        ]
+        started_at = datetime.now(timezone.utc)
+        started = perf_counter()
+        print(
+            f"Platform verification started: platform={display_name} "
+            f"started_at={started_at.isoformat()}"
+        )
         try:
-            completed_process = await asyncio.to_thread(
-                subprocess.run,
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=settings.sherlock_process_timeout,
+            platform_status, reason = await asyncio.wait_for(
+                _verify_platform_with_timeout(
+                    display_name,
+                    platform_key,
+                    username,
+                    settings.sherlock_request_timeout,
+                    settings.sherlock_process_timeout,
+                    settings.scan_platform_timeout,
+                ),
+                timeout=settings.scan_platform_timeout,
             )
-        except subprocess.TimeoutExpired:
-            _apply_platform_result(result, platform_key, "UNVERIFIED", "Network Timeout")
-            await on_platform_complete(display_name, False)
-            continue
-        except (FileNotFoundError, OSError) as exc:
-            _apply_platform_result(
-                result, platform_key, "UNVERIFIED", f"Sherlock unavailable: {exc}"
+        except asyncio.TimeoutError:
+            platform_status = "UNVERIFIED"
+            reason = (
+                f"Platform verification timeout after "
+                f"{settings.scan_platform_timeout}s"
             )
-            await on_platform_complete(display_name, False)
-            continue
-
-        if completed_process.returncode not in (0, 1):
-            error = completed_process.stderr.strip()
-            _apply_platform_result(
-                result,
-                platform_key,
-                "UNVERIFIED",
-                error or f"Sherlock failed for {display_name}",
-            )
-            await on_platform_complete(display_name, False)
-            continue
-        print(f"Sherlock stdout for {display_name}:\n{completed_process.stdout}")
-        print(f"Sherlock stderr for {display_name}:\n{completed_process.stderr}")
-        parsed = _parse_sherlock_output(completed_process.stdout)
-        status_value: PlatformStatus = "FOUND" if parsed[platform_key] else "NOT_FOUND"
-        reason = None
-        if status_value != "FOUND" and platform_key in FALLBACK_PLATFORM_KEYS:
-            status_value, reason = await _detect_unsupported_platform(
-                platform_key,
-                username,
-                settings.sherlock_request_timeout,
-            )
-        _apply_platform_result(result, platform_key, status_value, reason)
-        await on_platform_complete(display_name, status_value == "FOUND")
+        except Exception as exc:
+            platform_status = "UNVERIFIED"
+            reason = f"Platform verification failed: {exc}"
+        _apply_platform_result(result, platform_key, platform_status, reason)
+        completed_at = datetime.now(timezone.utc)
+        duration = perf_counter() - started
+        print(
+            f"Platform verification completed: platform={display_name} "
+            f"completed_at={completed_at.isoformat()} duration={duration:.3f}s "
+            f"status={platform_status} reason={reason or 'verified'}"
+        )
+        await on_platform_complete(display_name, platform_status == "FOUND")
 
     return result
+
+
+async def _verify_platform_with_timeout(
+    display_name: str,
+    platform_key: str,
+    username: str,
+    request_timeout: int,
+    process_timeout: int,
+    platform_timeout: int,
+) -> tuple[PlatformStatus, str | None]:
+    """Run one platform check with bounded Sherlock and HTTP work."""
+
+    site_name = SHERLOCK_SITE_NAMES[display_name]
+    if site_name is None:
+        fallback_started = perf_counter()
+        outcome = await _detect_unsupported_platform(
+            platform_key,
+            username,
+            min(request_timeout, platform_timeout),
+        )
+        print(
+            f"HTTP fallback completed: platform={display_name} "
+            f"duration={perf_counter() - fallback_started:.3f}s"
+        )
+        return outcome
+
+    command = [
+        sys.executable,
+        "-m",
+        "sherlock_project.sherlock",
+        username,
+        "--no-color",
+        "--print-found",
+        "--timeout",
+        str(min(request_timeout, platform_timeout)),
+        "--site",
+        site_name,
+    ]
+    sherlock_started = perf_counter()
+    try:
+        completed_process = await asyncio.to_thread(
+            subprocess.run,
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=min(process_timeout, platform_timeout),
+        )
+    except subprocess.TimeoutExpired:
+        return "UNVERIFIED", f"Sherlock timeout after {platform_timeout}s"
+    except (FileNotFoundError, OSError) as exc:
+        return "UNVERIFIED", f"Sherlock unavailable: {exc}"
+    print(
+        f"Sherlock completed: platform={display_name} "
+        f"duration={perf_counter() - sherlock_started:.3f}s "
+        f"returncode={completed_process.returncode}"
+    )
+
+    if completed_process.returncode not in (0, 1):
+        error = completed_process.stderr.strip()
+        return "UNVERIFIED", error or f"Sherlock failed for {display_name}"
+
+    parsed = _parse_sherlock_output(completed_process.stdout)
+    if parsed[platform_key]:
+        return "FOUND", None
+    fallback_started = perf_counter()
+    outcome = await _detect_unsupported_platform(
+        platform_key,
+        username,
+        min(request_timeout, platform_timeout),
+    )
+    print(
+        f"HTTP fallback completed: platform={display_name} "
+        f"duration={perf_counter() - fallback_started:.3f}s"
+    )
+    return outcome
