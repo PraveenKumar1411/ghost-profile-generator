@@ -22,6 +22,10 @@ async def run_scan_job(scan_id: str, username: str) -> None:
     """Execute a queued scan in the background with durable checkpoints."""
 
     async with session_factory() as session:
+        print(
+            f"Scan transition: scan_id={scan_id} "
+            "current_status=queued next_status=running"
+        )
         await update_scan_job(
             session,
             scan_id,
@@ -38,6 +42,16 @@ async def run_scan_job(scan_id: str, username: str) -> None:
             nonlocal completed_count
             completed_count += 1
             platform_key = PLATFORM_NAMES[display_name]
+            remaining_platforms = [
+                name
+                for index, name in enumerate(PLATFORM_NAMES)
+                if index >= completed_count
+            ]
+            print(
+                f"Scan platform checkpoint: scan_id={scan_id} "
+                f"current_status=running current_platform={display_name} "
+                f"remaining_platforms={remaining_platforms}"
+            )
             await update_scan_job(
                 session,
                 scan_id,
@@ -54,7 +68,12 @@ async def run_scan_job(scan_id: str, username: str) -> None:
                 record_platform,
             )
             risk_score, risk_level = calculate_risk(scan_result)
-            await update_scan_job(
+            print(
+                f"Scan completion trigger: scan_id={scan_id} "
+                f"current_status=running remaining_platforms=[] "
+                "completion_trigger=all_platforms_processed"
+            )
+            completed_scan = await update_scan_job(
                 session,
                 scan_id,
                 **scan_result,
@@ -68,6 +87,11 @@ async def run_scan_job(scan_id: str, username: str) -> None:
                 insight=insight_for(scan_result, risk_level),
                 category_exposure=category_presence(scan_result),
                 completed_at=datetime.now().astimezone(),
+            )
+            print(
+                f"Scan transition persisted: scan_id={scan_id} "
+                f"current_status={completed_scan.status if completed_scan else 'missing'} "
+                "completion_trigger=final_result_persisted"
             )
         except SherlockScanError as exc:
             await update_scan_job(
@@ -105,16 +129,22 @@ async def get_job_snapshot(scan_id: str) -> dict[str, object] | None:
                 (platforms.index(key) + 1) / len(platforms) * 100
             )
         ]
+        remaining_platforms = [
+            display_name
+            for display_name, key in PLATFORM_NAMES.items()
+            if key not in [PLATFORM_NAMES.get(name) for name in completed]
+        ]
+        print(
+            f"Scan status read: scan_id={scan.scan_id} "
+            f"current_status={scan.status} "
+            f"remaining_platforms={remaining_platforms}"
+        )
         return {
             "scan_id": scan.scan_id,
             "status": scan.status,
             "progress": scan.progress,
             "current_platform": scan.current_platform,
             "completed_platforms": completed,
-            "remaining_platforms": [
-                display_name
-                for display_name, key in PLATFORM_NAMES.items()
-                if key not in [PLATFORM_NAMES.get(name) for name in completed]
-            ],
+            "remaining_platforms": remaining_platforms,
             "failure_reason": scan.failure_reason,
         }

@@ -44,11 +44,21 @@ export default function ScanForm() {
         if (attempt !== scanAttemptRef.current) return null
         const snapshot = await getScanStatus(scanId)
         if (attempt !== scanAttemptRef.current) return null
+        console.info('[scan-flow] status snapshot', {
+          scanId,
+          status: snapshot.status,
+          remainingPlatforms: snapshot.remaining_platforms,
+        })
         setJob({ ...snapshot, scanId })
         if (snapshot.status === 'failed') {
           throw new Error(snapshot.failure_reason || 'The background scan failed.')
         }
         if (snapshot.status === 'completed') {
+          console.info('[scan-flow] completion trigger', {
+            scanId,
+            status: snapshot.status,
+            remainingPlatforms: snapshot.remaining_platforms,
+          })
           return getScanResult(scanId)
         }
         await new Promise((resolve) => window.setTimeout(resolve, 2000))

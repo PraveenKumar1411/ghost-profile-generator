@@ -116,6 +116,10 @@ async def scan_result(scan_id: str, session: DatabaseSession) -> ScanJobResult:
     scan = await get_scan_by_scan_id(session, scan_id)
     if scan is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+    print(
+        f"Scan result read: scan_id={scan_id} current_status={scan.status} "
+        f"completion_trigger={'completed_status' if scan.status == 'completed' else 'not_completed'}"
+    )
     if scan.status != "completed":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

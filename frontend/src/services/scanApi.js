@@ -5,6 +5,47 @@ const api = axios.create({
   timeout: 120000,
 })
 
+api.interceptors.request.use((config) => {
+  config.metadata = {
+    startedAt: performance.now(),
+    timeout: config.timeout,
+  }
+  console.info('[scan-api] request', {
+    method: config.method?.toUpperCase(),
+    url: `${config.baseURL ?? ''}${config.url ?? ''}`,
+    timeout: config.timeout,
+  })
+  return config
+})
+
+api.interceptors.response.use(
+  (response) => {
+    const metadata = response.config.metadata
+    console.info('[scan-api] response', {
+      method: response.config.method?.toUpperCase(),
+      url: `${response.config.baseURL ?? ''}${response.config.url ?? ''}`,
+      durationMs: metadata ? Math.round(performance.now() - metadata.startedAt) : null,
+      timeout: metadata?.timeout ?? response.config.timeout,
+      status: response.status,
+    })
+    return response
+  },
+  (error) => {
+    const config = error.config
+    const metadata = config?.metadata
+    console.error('[scan-api] error', {
+      method: config?.method?.toUpperCase(),
+      url: `${config?.baseURL ?? ''}${config?.url ?? ''}`,
+      durationMs: metadata ? Math.round(performance.now() - metadata.startedAt) : null,
+      timeout: metadata?.timeout ?? config?.timeout,
+      status: error.response?.status ?? null,
+      code: error.code,
+      message: error.message,
+    })
+    return Promise.reject(error)
+  },
+)
+
 export async function scanUsername(username) {
   const { data } = await api.get(`/scan/${encodeURIComponent(username)}`)
   return data
