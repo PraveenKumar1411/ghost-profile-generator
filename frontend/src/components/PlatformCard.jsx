@@ -19,10 +19,17 @@ export default function PlatformCard({ platform, present, status, reason, userna
   const meta = PLATFORM_META[platform]
   const Icon = meta.icon
   const profileUrl = meta.url(username)
+  const effectiveStatus = present || status === 'FOUND'
+    ? 'FOUND'
+    : status === 'UNVERIFIED'
+      ? 'UNVERIFIED'
+      : 'NOT_FOUND'
+  const isFound = effectiveStatus === 'FOUND'
+  const isUnverified = effectiveStatus === 'UNVERIFIED'
 
   return (
     <article
-      className={`platform-card glass-card ${present ? 'platform-card-found' : 'platform-card-missing'}`}
+      className={`platform-card glass-card ${isFound ? 'platform-card-found' : 'platform-card-missing'}`}
       style={{ '--card-delay': `${index * 70}ms`, '--platform-color': meta.color, '--platform-accent': meta.accent ?? meta.color }}
     >
       <div className="platform-card-main">
@@ -32,16 +39,16 @@ export default function PlatformCard({ platform, present, status, reason, userna
         <div className="min-w-0">
           <h3 className="platform-name">{meta.label}</h3>
           <p className="platform-signal">
-            {status === 'UNVERIFIED' ? 'verification unavailable' : present ? 'public signal detected' : 'no public signal found'}
+            {isUnverified ? 'verification unavailable' : isFound ? 'public signal detected' : 'no public signal found'}
           </p>
         </div>
       </div>
       <div className="platform-card-actions">
-        <span className={`status-pill ${status === 'FOUND' ? 'status-found' : status === 'UNVERIFIED' ? 'status-unverified' : 'status-clear'}`}>
-          <span className="status-dot" /> {status === 'UNVERIFIED' ? 'Unable to verify' : present ? 'Found' : 'Not found'}
+        <span className={`status-pill ${isFound ? 'status-found' : isUnverified ? 'status-unverified' : 'status-clear'}`}>
+          <span className="status-dot" /> {isUnverified ? 'Unable to verify' : isFound ? 'Found' : 'Not found'}
         </span>
-        {status === 'UNVERIFIED' && <p className="verification-reason">{reason}</p>}
-        {status === 'FOUND' && (
+        {isUnverified && <p className="verification-reason">{reason}</p>}
+        {isFound && (
           <div className="profile-actions">
             <span className="verified-badge">✓ Verified</span>
             <a className="open-profile-link" href={profileUrl} target="_blank" rel="noreferrer">

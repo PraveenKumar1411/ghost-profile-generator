@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 PrivacyGrade = Literal["A+", "A", "B", "C", "D", "F"]
+VerificationStatus = Literal["FOUND", "NOT_FOUND", "UNVERIFIED", "BLOCKED"]
 
 
 class ScanRequest(BaseModel):
@@ -46,7 +47,7 @@ class ScanJobResult(ScanStatusResponse):
     recommendations: list[str] = Field(default_factory=list)
     report_id: str
     insight: str = ""
-    verification_status: dict[str, str] = Field(default_factory=dict)
+    verification_status: dict[str, VerificationStatus] = Field(default_factory=dict)
     verification_reasons: dict[str, str] = Field(default_factory=dict)
 
 
@@ -74,5 +75,5 @@ class ScanResponse(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
     insight: str = ""
     category_exposure: dict[str, bool] = Field(default_factory=dict)
-    verification_status: dict[str, str] = Field(default_factory=dict)
+    verification_status: dict[str, VerificationStatus] = Field(default_factory=dict)
     verification_reasons: dict[str, str] = Field(default_factory=dict)

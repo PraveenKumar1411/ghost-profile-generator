@@ -116,7 +116,7 @@ def insight_for(scan_result: ScanResult, risk_level: RiskLevel) -> str:
     unverified = [
         platform
         for platform, status in scan_result["verification_status"].items()
-        if status == "UNVERIFIED"
+        if status in {"UNVERIFIED", "BLOCKED"}
     ]
     uncertainty_note = (
         " Some platforms could not be verified due to platform restrictions or "

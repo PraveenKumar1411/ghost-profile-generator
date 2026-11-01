@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from app.config import get_settings
 
 
-PlatformStatus = Literal["FOUND", "NOT_FOUND", "UNVERIFIED"]
+PlatformStatus = Literal["FOUND", "NOT_FOUND", "UNVERIFIED", "BLOCKED"]
 
 
 class ScanResult(TypedDict):
@@ -150,58 +150,215 @@ def _parse_sherlock_output(output: str) -> ScanResult:
     return result
 
 
-def _detect_profile_with_http(
+def _request_profile(
     platform_key: str,
     username: str,
     timeout: int,
-) -> tuple[PlatformStatus, str | None]:
-    """Detect a missing Sherlock result using its public profile URL."""
+) -> tuple[int, str, str, str] | tuple[None, None, None, None]:
+    """Fetch a profile once and return status, final URL, and response body."""
 
     url = PLATFORM_URL_PATTERNS[platform_key].format(username=username)
     request = Request(url, headers=PROFILE_REQUEST_HEADERS)
     try:
         with urlopen(request, timeout=timeout) as response:
-            final_path = urlsplit(response.geturl()).path.rstrip("/").casefold()
-            if (
-                final_path.startswith("/login")
-                or platform_key == "tiktok"
-                and final_path == "/in/about"
-                or platform_key == "telegram"
-                and urlsplit(response.geturl()).netloc.casefold() not in {"t.me", "telegram.me"}
-            ):
-                print(
-                    f"Fallback detector: {platform_key} redirected to a "
-                    f"non-profile page ({response.geturl()})"
-                )
-                if final_path.startswith("/login"):
-                    return "UNVERIFIED", "Redirected to Login Page"
-                if platform_key == "tiktok":
-                    return "UNVERIFIED", "Redirected to generic landing page"
-                return "UNVERIFIED", "Redirected away from profile host"
-            print(
-                f"Fallback detector: {platform_key} returned "
-                f"{response.status} after redirect to {response.geturl()}"
-            )
-            return ("FOUND", None) if response.status == 200 else (
-                "UNVERIFIED",
-                f"Unexpected HTTP {response.status}",
-            )
+            body = response.read(65536).decode("utf-8", errors="ignore").casefold()
+            return response.status, response.url, body, url
     except HTTPError as exc:
-        print(f"Fallback detector: {platform_key} returned HTTP {exc.code}")
-        if exc.code == 404:
-            return "NOT_FOUND", "HTTP 404 Not Found"
-        if exc.code == 429:
-            return "UNVERIFIED", "HTTP 429 Too Many Requests"
-        if exc.code == 999:
-            return "UNVERIFIED", "HTTP 999 Platform Blocked Request"
-        if exc.code in {401, 403}:
-            return "UNVERIFIED", f"HTTP {exc.code} Access Restricted"
-        return "UNVERIFIED", f"HTTP {exc.code} {exc.reason or 'Request failed'}"
+        return exc.code, exc.url, "", url
     except TimeoutError:
-        return "UNVERIFIED", "Network Timeout"
+        return None, None, "Network Timeout", url
     except (URLError, OSError) as exc:
         detail = exc.reason if isinstance(exc, URLError) else str(exc)
-        return "UNVERIFIED", f"Network failure: {detail}"
+        return None, None, f"Network failure: {detail}", url
+
+
+def _blocked_response(status: int, final_url: str, body: str) -> str | None:
+    """Return a block reason for common rate-limit, WAF, and login responses."""
+
+    path = urlsplit(final_url).path.casefold()
+    if status == 429:
+        return "HTTP 429 Too Many Requests"
+    if status == 999:
+        return "HTTP 999 Platform Blocked Request"
+    if status in {401, 403}:
+        return f"HTTP {status} Access Restricted"
+    if path.startswith("/challenge"):
+        return "Redirected to Challenge Page"
+    if any(
+        marker in body
+        for marker in (
+            "captcha",
+            "challenge-running",
+            "cf-chl-",
+            "rate limit",
+        )
+    ):
+        return "Anti-bot or rate-limit challenge"
+    return None
+
+
+def _login_wall_response(final_url: str) -> str | None:
+    """Identify a login wall without treating it as proof of absence or blocking."""
+
+    path = urlsplit(final_url).path.casefold()
+    if path.startswith(("/login", "/accounts/login", "/signin", "/sign-in")):
+        return "Login Required"
+    return None
+
+
+def _validate_github(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile(
+        "github",
+        username,
+        timeout,
+        {"github.com"},
+        f"/{username.casefold()}",
+        inspect_body=False,
+    )
+
+
+def _validate_reddit(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile(
+        "reddit", username, timeout, {"reddit.com", "www.reddit.com"}, f"/user/{username.casefold()}"
+    )
+
+
+def _validate_twitter(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile("twitter", username, timeout, {"x.com", "www.x.com", "twitter.com"}, f"/{username.casefold()}")
+
+
+def _validate_instagram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    status, final_url, body, _ = _request_profile("instagram", username, timeout)
+    if status is None:
+        return "UNVERIFIED", body
+    if status == 404:
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    login_wall = _login_wall_response(final_url)
+    if login_wall:
+        return "UNVERIFIED", login_wall
+    blocked = _blocked_response(status, final_url, body)
+    if blocked:
+        return "BLOCKED", blocked
+    path = urlsplit(final_url).path.rstrip("/").casefold()
+    if status in {200, 301, 302} and path == f"/{username.casefold()}":
+        if username.casefold() in body:
+            return "FOUND", None
+        return "UNVERIFIED", "HTTP 200 profile content could not be confirmed"
+    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+
+
+def _validate_linkedin(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile("linkedin", username, timeout, {"linkedin.com", "www.linkedin.com"}, f"/in/{username.casefold()}")
+
+
+def _validate_facebook(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    status, final_url, body, _ = _request_profile("facebook", username, timeout)
+    if status is None:
+        return "UNVERIFIED", body
+    if status == 404:
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    login_wall = _login_wall_response(final_url)
+    if login_wall:
+        return "UNVERIFIED", login_wall
+    blocked = _blocked_response(status, final_url, body)
+    if blocked:
+        return "BLOCKED", blocked
+    parsed = urlsplit(final_url)
+    if parsed.netloc.casefold() not in {"facebook.com", "www.facebook.com"}:
+        return "BLOCKED", f"Redirected away from Facebook to {final_url}"
+    if status in {200, 301, 302} and parsed.path.rstrip("/").casefold() == f"/{username.casefold()}":
+        if username.casefold() in body:
+            return "FOUND", None
+        return "UNVERIFIED", "HTTP 200 Facebook content could not be confirmed"
+    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+
+
+def _validate_youtube(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile("youtube", username, timeout, { "youtube.com", "www.youtube.com" }, f"/@{username.casefold()}")
+
+
+def _validate_tiktok(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile("tiktok", username, timeout, {"tiktok.com", "www.tiktok.com"}, f"/@{username.casefold()}")
+
+
+def _validate_threads(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    return _validate_path_profile("threads", username, timeout, {"threads.net", "www.threads.net", "threads.com", "www.threads.com"}, f"/@{username.casefold()}")
+
+
+def _validate_telegram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
+    status, final_url, body, _ = _request_profile("telegram", username, timeout)
+    if status is None:
+        return "UNVERIFIED", body
+    if status == 404:
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    login_wall = _login_wall_response(final_url)
+    if login_wall:
+        return "UNVERIFIED", login_wall
+    blocked = _blocked_response(status, final_url, body)
+    if blocked:
+        return "BLOCKED", blocked
+    host = urlsplit(final_url).netloc.casefold()
+    path = urlsplit(final_url).path.rstrip("/").casefold()
+    if host not in {"t.me", "telegram.me"}:
+        return "BLOCKED", f"Redirected away from Telegram to {final_url}"
+    if status in {200, 301, 302} and path == f"/{username.casefold()}":
+        if f"@{username.casefold()}" in body or "contact @" in body:
+            return "FOUND", None
+        return "UNVERIFIED", "HTTP 200 Telegram profile content could not be confirmed"
+    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+
+
+def _validate_path_profile(
+    platform_key: str,
+    username: str,
+    timeout: int,
+    allowed_hosts: set[str],
+    expected_path: str,
+    inspect_body: bool = True,
+) -> tuple[PlatformStatus, str | None]:
+    """Validate a platform whose canonical profile is identified by its path."""
+
+    status, final_url, body, _ = _request_profile(platform_key, username, timeout)
+    if status is None:
+        return "UNVERIFIED", body
+    if status == 404:
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    login_wall = _login_wall_response(final_url)
+    if login_wall:
+        return "UNVERIFIED", login_wall
+    blocked = _blocked_response(status, final_url, body if inspect_body else "")
+    if blocked:
+        return "BLOCKED", blocked
+    parsed = urlsplit(final_url)
+    if parsed.netloc.casefold() not in allowed_hosts:
+        return "UNVERIFIED", f"Generic redirect to {final_url}"
+    if status in {200, 301, 302} and parsed.path.rstrip("/").casefold() == expected_path:
+        return "FOUND", None
+    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+
+
+PLATFORM_VALIDATORS: dict[str, Callable[[str, int], tuple[PlatformStatus, str | None]]] = {
+    "github": _validate_github,
+    "reddit": _validate_reddit,
+    "twitter": _validate_twitter,
+    "instagram": _validate_instagram,
+    "linkedin": _validate_linkedin,
+    "facebook": _validate_facebook,
+    "youtube": _validate_youtube,
+    "tiktok": _validate_tiktok,
+    "threads": _validate_threads,
+    "telegram": _validate_telegram,
+}
+
+
+def _detect_profile_with_http(
+    platform_key: str,
+    username: str,
+    timeout: int,
+) -> tuple[PlatformStatus, str | None]:
+    """Run the platform-specific validator for a profile."""
+
+    return PLATFORM_VALIDATORS[platform_key](username, timeout)
 
 
 async def _detect_unsupported_platform(
@@ -229,7 +386,7 @@ def _apply_platform_result(
 
     result["verification_status"][platform_key] = status
     result[platform_key] = status == "FOUND"
-    if status == "UNVERIFIED" and reason:
+    if status in {"UNVERIFIED", "BLOCKED"} and reason:
         result["verification_reasons"][platform_key] = reason
     else:
         result["verification_reasons"].pop(platform_key, None)
