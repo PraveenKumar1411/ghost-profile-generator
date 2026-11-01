@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ExternalLink, Home } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import { getAnalytics, getApiErrorMessage, getScanHistory } from '../services/scanApi'
 
@@ -65,7 +66,15 @@ export default function HistoryPage() {
             <h1 className="history-title">Scan <span className="text-gradient">history</span></h1>
             <p className="history-subtitle">Review previous identity scans and revisit your exposure intelligence.</p>
           </div>
-          <Link to="/" className="button-secondary">back to home <span>↗</span></Link>
+          <Link to="/" className="topbar-nav-link" aria-label="Back to home">
+            <span className="topbar-nav-leading">
+              <Home className="topbar-nav-icon" aria-hidden="true" />
+              <span className="topbar-nav-divider" aria-hidden="true" />
+              <span className="topbar-nav-status" aria-hidden="true" />
+            </span>
+            <span className="topbar-nav-copy"><span>BACK TO</span> <strong>HOME</strong></span>
+            <span className="topbar-nav-arrow" aria-hidden="true"><ExternalLink /></span>
+          </Link>
         </section>
 
         <section className="history-content">
