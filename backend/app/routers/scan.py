@@ -142,6 +142,8 @@ async def scan_result(scan_id: str, session: DatabaseSession) -> ScanJobResult:
         recommendations=scan.recommendations,
         report_id=scan.report_id,
         insight=scan.insight,
+        verification_status=scan.verification_status or {},
+        verification_reasons=scan.verification_reasons or {},
     )
 
 

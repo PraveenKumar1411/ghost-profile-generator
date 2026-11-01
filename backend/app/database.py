@@ -103,6 +103,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await connection.execute(
                 text(
                     "ALTER TABLE scans ADD COLUMN IF NOT EXISTS "
+                    "verification_status JSON NOT NULL DEFAULT '{}'::json"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE scans ADD COLUMN IF NOT EXISTS "
+                    "verification_reasons JSON NOT NULL DEFAULT '{}'::json"
+                )
+            )
+            await connection.execute(
+                text(
+                    "ALTER TABLE scans ADD COLUMN IF NOT EXISTS "
                     "scan_id VARCHAR(24)"
                 )
             )

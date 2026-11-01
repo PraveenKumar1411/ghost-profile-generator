@@ -1,11 +1,12 @@
 import { Cell, Pie, PieChart, PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer, Tooltip } from 'recharts'
 
-const PIE_COLORS = ['#41d9ff', '#334155']
+const PIE_COLORS = ['#41d9ff', '#334155', '#fbbf24']
 
-export default function ExposureCharts({ found, missing, categories }) {
+export default function ExposureCharts({ found, missing, unverified, categories }) {
   const pieData = [
     { name: 'Found', value: found },
-    { name: 'Missing', value: missing },
+    { name: 'Not found', value: missing },
+    { name: 'Unverified', value: unverified },
   ]
   const radarData = [
     { subject: 'Social', value: categories.social ? 100 : 0 },

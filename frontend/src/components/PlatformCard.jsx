@@ -15,7 +15,7 @@ const PLATFORM_META = {
   telegram: { label: 'Telegram', icon: FaTelegram, color: '#229ED9', url: (username) => `https://t.me/${username}` },
 }
 
-export default function PlatformCard({ platform, present, username, onCopy, copied, index = 0 }) {
+export default function PlatformCard({ platform, present, status, reason, username, onCopy, copied, index = 0 }) {
   const meta = PLATFORM_META[platform]
   const Icon = meta.icon
   const profileUrl = meta.url(username)
@@ -31,14 +31,17 @@ export default function PlatformCard({ platform, present, username, onCopy, copi
         </div>
         <div className="min-w-0">
           <h3 className="platform-name">{meta.label}</h3>
-          <p className="platform-signal">{present ? 'public signal detected' : 'no public signal found'}</p>
+          <p className="platform-signal">
+            {status === 'UNVERIFIED' ? 'verification unavailable' : present ? 'public signal detected' : 'no public signal found'}
+          </p>
         </div>
       </div>
       <div className="platform-card-actions">
-        <span className={`status-pill ${present ? 'status-found' : 'status-clear'}`}>
-          <span className="status-dot" /> {present ? 'Found' : 'Not found'}
+        <span className={`status-pill ${status === 'FOUND' ? 'status-found' : status === 'UNVERIFIED' ? 'status-unverified' : 'status-clear'}`}>
+          <span className="status-dot" /> {status === 'UNVERIFIED' ? 'Unable to verify' : present ? 'Found' : 'Not found'}
         </span>
-        {present && (
+        {status === 'UNVERIFIED' && <p className="verification-reason">{reason}</p>}
+        {status === 'FOUND' && (
           <div className="profile-actions">
             <span className="verified-badge">✓ Verified</span>
             <a className="open-profile-link" href={profileUrl} target="_blank" rel="noreferrer">

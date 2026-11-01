@@ -46,6 +46,8 @@ class ScanJobResult(ScanStatusResponse):
     recommendations: list[str] = Field(default_factory=list)
     report_id: str
     insight: str = ""
+    verification_status: dict[str, str] = Field(default_factory=dict)
+    verification_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 class ScanResponse(BaseModel):
@@ -72,3 +74,5 @@ class ScanResponse(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
     insight: str = ""
     category_exposure: dict[str, bool] = Field(default_factory=dict)
+    verification_status: dict[str, str] = Field(default_factory=dict)
+    verification_reasons: dict[str, str] = Field(default_factory=dict)

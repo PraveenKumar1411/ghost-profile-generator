@@ -125,8 +125,12 @@ export default function ResultsPage() {
 
   if (!result) return <Navigate to="/" replace />
 
-  const found = PLATFORMS.filter((platform) => result[platform])
-  const missing = PLATFORMS.filter((platform) => !result[platform])
+  const getPlatformStatus = (platform) => (
+    result.verification_status?.[platform] ?? (result[platform] ? 'FOUND' : 'NOT_FOUND')
+  )
+  const found = PLATFORMS.filter((platform) => getPlatformStatus(platform) === 'FOUND')
+  const missing = PLATFORMS.filter((platform) => getPlatformStatus(platform) === 'NOT_FOUND')
+  const unverified = PLATFORMS.filter((platform) => getPlatformStatus(platform) === 'UNVERIFIED')
   const riskLevel = result.risk_level?.toUpperCase() ?? 'UNKNOWN'
   const threatKey = result.risk_score >= 80 ? 'CRITICAL' : riskLevel
   const threat = THREAT_SUMMARIES[threatKey] ?? THREAT_SUMMARIES.LOW
@@ -220,9 +224,9 @@ export default function ResultsPage() {
         <section className="results-section">
           <div className="results-section-heading">
             <div><p className="section-kicker">02 / platform analysis</p><h2 className="section-title mt-2">Identity signal map</h2></div>
-            <span className="section-count">{found.length} found <b>·</b> {missing.length} not found</span>
+            <span className="section-count">{found.length} found <b>·</b> {missing.length} not found <b>·</b> {unverified.length} unverified</span>
           </div>
-          {!found.length && (
+          {!found.length && !unverified.length && (
             <div className="empty-detection-state">
               <strong>No public profiles were identified across monitored services.</strong>
               <p>This may indicate a limited digital footprint.</p>
@@ -230,7 +234,7 @@ export default function ResultsPage() {
           )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PLATFORMS.map((platform, index) => (
-            <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} onCopy={handleCopy} copied={copiedPlatform === platform} index={index} />
+            <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} status={getPlatformStatus(platform)} reason={result.verification_reasons?.[platform]} onCopy={handleCopy} copied={copiedPlatform === platform} index={index} />
             ))}
           </div>
         </section>
@@ -241,7 +245,7 @@ export default function ResultsPage() {
             <h2 className="section-title mt-2">Surface area at a glance</h2>
             <div className="summary-metrics">
               <AnimatedMetric value={found.length} label="Platforms found" tone="found" />
-              <AnimatedMetric value={missing.length} label="Platforms missing" tone="missing" />
+              <AnimatedMetric value={missing.length} label="Verified not found" tone="missing" />
               <AnimatedMetric value={PLATFORMS.length} label="Total platforms" tone="total" />
               <AnimatedMetric value={riskLevel} label="Risk rating" tone="risk" />
             </div>
@@ -253,6 +257,23 @@ export default function ResultsPage() {
             <div className={`threat-callout threat-callout-${riskLevel.toLowerCase()}`}>
               <span className="threat-pulse" />
               <div><strong>{threat.title}</strong><p>{result.insight || threat.detail}</p></div>
+            </div>
+            <div className="glass-card verification-card">
+              <p className="section-kicker">05 / verification confidence</p>
+              <h2 className="section-title mt-2">Platform Verification Report</h2>
+              <div className="verification-summary">
+                <span className="verification-found">✓ {found.length} Verified Found</span>
+                <span className="verification-missing">✕ {missing.length} Verified Not Found</span>
+                <span className="verification-unverified">⚠ {unverified.length} Unable To Verify</span>
+              </div>
+              {unverified.length > 0 && (
+                <div className="verification-issues">
+                  <strong>Verification Issues</strong>
+                  {unverified.map((platform) => (
+                    <div key={platform}><span>⚠ {PLATFORM_LABELS[platform]}</span><p>{result.verification_reasons?.[platform] || 'Platform verification was unavailable.'}</p></div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="glass-card recommendations-card">
@@ -269,7 +290,7 @@ export default function ResultsPage() {
           </div>
         </section>
 
-        <ExposureCharts found={found.length} missing={missing.length} categories={result.category_exposure ?? {}} />
+        <ExposureCharts found={found.length} missing={missing.length} unverified={unverified.length} categories={result.category_exposure ?? {}} />
         <section className="insight-row">
           <div className="glass-card insight-card"><p className="section-kicker">09 / OSINT insight engine</p><h2 className="section-title mt-2">Signal interpretation</h2><p>{result.insight || threat.detail}</p></div>
           <div className="glass-card insight-card"><p className="section-kicker">10 / exposure trend</p><h2 className="section-title mt-2">Change since previous scan</h2><strong className={`trend-value ${exposureChange > 0 ? 'trend-up' : 'trend-down'}`}>{exposureChange === null ? '—' : `${exposureChange > 0 ? '+' : ''}${exposureChange}`}</strong><p>{previousScore === undefined ? 'Run another scan to compare exposure over time.' : `Previous: ${previousScore} · Current: ${result.risk_score}`}</p></div>

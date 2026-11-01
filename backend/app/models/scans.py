@@ -57,6 +57,12 @@ class Scan(Base):
         nullable=False,
         default=dict,
     )
+    verification_status: Mapped[dict[str, str]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    verification_reasons: Mapped[dict[str, str]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

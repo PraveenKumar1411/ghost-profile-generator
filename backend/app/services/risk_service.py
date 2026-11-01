@@ -109,16 +109,33 @@ def insight_for(scan_result: ScanResult, risk_level: RiskLevel) -> str:
     """Build a concise OSINT insight from detected categories."""
 
     categories = category_presence(scan_result)
-    count = sum(scan_result.values())
+    count = sum(
+        scan_result[platform]
+        for platform in PLATFORM_WEIGHTS
+    )
+    unverified = [
+        platform
+        for platform, status in scan_result["verification_status"].items()
+        if status == "UNVERIFIED"
+    ]
+    uncertainty_note = (
+        " Some platforms could not be verified due to platform restrictions or "
+        "rate limits. These results should not be interpreted as profile absence."
+        if unverified
+        else ""
+    )
     if count == 0:
-        return "This identity has a low discoverability footprint."
+        return "This identity has a low discoverability footprint." + uncertainty_note
     if categories["professional"] and categories["social"]:
-        return "Professional and social exposure are both visible across multiple public platforms."
+        return (
+            "Professional and social exposure are both visible across multiple "
+            "public platforms." + uncertainty_note
+        )
     if categories["professional"] and not categories["social"]:
-        return "Professional exposure is higher than social exposure."
+        return "Professional exposure is higher than social exposure." + uncertainty_note
     if count >= 5 or risk_level == "CRITICAL":
-        return "This username appears on multiple public platforms."
-    return "A limited public footprint was discovered for this identity."
+        return "This username appears on multiple public platforms." + uncertainty_note
+    return "A limited public footprint was discovered for this identity." + uncertainty_note
 
 
 def calculate_risk(scan_result: ScanResult) -> tuple[int, RiskLevel]:

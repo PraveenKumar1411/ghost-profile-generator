@@ -27,6 +27,8 @@ async def create_scan(
                 "recommendations",
                 "insight",
                 "category_exposure",
+                "verification_status",
+                "verification_reasons",
             }
         ),
         report_id=f"tmp-{uuid4().hex[:12]}",
@@ -37,6 +39,8 @@ async def create_scan(
         recommendations=scan_result.recommendations,
         insight=scan_result.insight,
         category_exposure=scan_result.category_exposure,
+        verification_status=scan_result.verification_status,
+        verification_reasons=scan_result.verification_reasons,
     )
     session.add(scan)
     try:
@@ -66,6 +70,8 @@ async def create_scan_job(session: AsyncSession, username: str) -> Scan:
         tiktok=False,
         threads=False,
         telegram=False,
+        verification_status={},
+        verification_reasons={},
         risk_score=0,
         risk_level="LOW",
         privacy_grade="A+",
