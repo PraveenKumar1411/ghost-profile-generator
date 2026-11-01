@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(
         default=[
             "http://localhost:5173",
-            "https://ghost-profile-generator.vercel.app",
+           "https://praveenkumar1411-ghostprofilegenerator.vercel.app",
         ],
         alias="CORS_ORIGINS",
     )
