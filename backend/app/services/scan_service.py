@@ -6,6 +6,9 @@ import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from typing import TypedDict
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from app.config import get_settings
 
@@ -49,6 +52,43 @@ PLATFORM_NAMES = {
     "Threads": "threads",
     "Telegram": "telegram",
 }
+SHERLOCK_SITE_NAMES = {
+    "GitHub": "GitHub",
+    "Reddit": "Reddit",
+    "Twitter": "Twitter",
+    "Instagram": "Instagram",
+    "LinkedIn": "LinkedIn",
+    "Facebook": None,
+    "YouTube": "YouTube",
+    "TikTok": "TikTok",
+    "Threads": "threads",
+    "Telegram": "Telegram",
+}
+FALLBACK_PLATFORM_KEYS = {
+    "instagram",
+    "facebook",
+    "youtube",
+    "tiktok",
+    "threads",
+    "telegram",
+}
+PLATFORM_KEYS_BY_NAME = {
+    display_name.casefold(): platform_key
+    for display_name, platform_key in PLATFORM_NAMES.items()
+}
+PLATFORM_KEYS_BY_NAME.update(
+    {
+        "github.com": "github",
+        "youtube.com": "youtube",
+        "twitter.com": "twitter",
+        "x.com": "twitter",
+        "instagram.com": "instagram",
+        "facebook.com": "facebook",
+        "tiktok.com": "tiktok",
+        "threads.net": "threads",
+        "telegram.me": "telegram",
+    }
+)
 PLATFORM_URL_PATTERNS = {
     "github": "https://github.com/{username}",
     "reddit": "https://www.reddit.com/user/{username}",
@@ -61,7 +101,16 @@ PLATFORM_URL_PATTERNS = {
     "threads": "https://www.threads.net/@{username}",
     "telegram": "https://t.me/{username}",
 }
-FOUND_RESULT_PATTERN = re.compile(r"^\[\+\]\s+(?P<platform>[^:]+):\s+\S+", re.MULTILINE)
+FOUND_RESULT_PATTERN = re.compile(
+    r"^\s*\[\+\]\s+(?P<platform>[^:]+):\s+\S+",
+    re.MULTILINE,
+)
+PROFILE_REQUEST_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; GhostProfileGenerator/1.0; "
+        "+https://github.com/PraveenKumar1411/ghost-profile-generator)"
+    )
+}
 
 
 def _parse_sherlock_output(output: str) -> ScanResult:
@@ -80,10 +129,67 @@ def _parse_sherlock_output(output: str) -> ScanResult:
         "telegram": False,
     }
     for match in FOUND_RESULT_PATTERN.finditer(output):
-        platform = PLATFORM_NAMES.get(match.group("platform").strip())
-        if platform is not None:
+        platform_name = match.group("platform").strip()
+        platform = PLATFORM_KEYS_BY_NAME.get(platform_name.casefold())
+        print(f"Sherlock matched platform: {platform_name!r} -> {platform!r}")
+        if platform:
             result[platform] = True
+    print(f"Final parsed Sherlock result: {result}")
     return result
+
+
+def _detect_profile_with_http(platform_key: str, username: str, timeout: int) -> bool:
+    """Detect a missing Sherlock result using its public profile URL."""
+
+    url = PLATFORM_URL_PATTERNS[platform_key].format(username=username)
+    request = Request(url, headers=PROFILE_REQUEST_HEADERS)
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            final_path = urlsplit(response.geturl()).path.rstrip("/").casefold()
+            if (
+                platform_key == "tiktok"
+                and final_path == "/in/about"
+                or platform_key == "threads"
+                and final_path.startswith("/login")
+                or platform_key == "telegram"
+                and urlsplit(response.geturl()).netloc.casefold() not in {"t.me", "telegram.me"}
+            ):
+                print(
+                    f"Fallback detector: {platform_key} redirected to a "
+                    f"non-profile page ({response.geturl()})"
+                )
+                return False
+            print(
+                f"Fallback detector: {platform_key} returned "
+                f"{response.status} after redirect to {response.geturl()}"
+            )
+            return response.status == 200
+    except HTTPError as exc:
+        print(f"Fallback detector: {platform_key} returned HTTP {exc.code}")
+        if exc.code == 404:
+            return False
+        raise SherlockUnavailableError(
+            f"Fallback detector failed for {platform_key}: HTTP {exc.code}"
+        ) from exc
+    except (TimeoutError, URLError, OSError) as exc:
+        raise SherlockUnavailableError(
+            f"Fallback detector failed for {platform_key}: {exc}"
+        ) from exc
+
+
+async def _detect_unsupported_platform(
+    platform_key: str,
+    username: str,
+    timeout: int,
+) -> bool:
+    """Run a blocking fallback detector without blocking the event loop."""
+
+    return await asyncio.to_thread(
+        _detect_profile_with_http,
+        platform_key,
+        username,
+        timeout,
+    )
 
 
 async def scan_username(username: str) -> ScanResult:
@@ -100,8 +206,9 @@ async def scan_username(username: str) -> ScanResult:
         "--timeout",
         str(settings.sherlock_request_timeout),
     ]
-    for platform in PLATFORM_NAMES:
-        command.extend(["--site", platform])
+    for site_name in SHERLOCK_SITE_NAMES.values():
+        if site_name is not None:
+            command.extend(["--site", site_name])
 
     try:
         completed_process = await asyncio.to_thread(
@@ -126,7 +233,18 @@ async def scan_username(username: str) -> ScanResult:
         raise SherlockUnavailableError(
             f"Sherlock failed to complete the scan: {error or 'unknown error'}"
         )
-    return _parse_sherlock_output(completed_process.stdout)
+    print(f"Sherlock stdout:\n{completed_process.stdout}")
+    print(f"Sherlock stderr:\n{completed_process.stderr}")
+    result = _parse_sherlock_output(completed_process.stdout)
+    for platform_key in FALLBACK_PLATFORM_KEYS:
+        if not result[platform_key]:
+            result[platform_key] = await _detect_unsupported_platform(
+                platform_key,
+                username,
+                settings.sherlock_request_timeout,
+            )
+    print(f"Final scan result: {result}")
+    return result
 
 
 async def scan_username_with_progress(
@@ -150,6 +268,18 @@ async def scan_username_with_progress(
     }
 
     for display_name, platform_key in PLATFORM_NAMES.items():
+        site_name = SHERLOCK_SITE_NAMES[display_name]
+        if site_name is None or (
+            platform_key in FALLBACK_PLATFORM_KEYS and not result[platform_key]
+        ):
+            found = await _detect_unsupported_platform(
+                platform_key,
+                username,
+                settings.sherlock_request_timeout,
+            )
+            result[platform_key] = found
+            await on_platform_complete(display_name, found)
+            continue
         command = [
             sys.executable,
             "-m",
@@ -160,7 +290,7 @@ async def scan_username_with_progress(
             "--timeout",
             str(settings.sherlock_request_timeout),
             "--site",
-            display_name,
+            site_name,
         ]
         try:
             completed_process = await asyncio.to_thread(
@@ -185,6 +315,8 @@ async def scan_username_with_progress(
             raise SherlockUnavailableError(
                 f"Sherlock failed for {display_name}: {error or 'unknown error'}"
             )
+        print(f"Sherlock stdout for {display_name}:\n{completed_process.stdout}")
+        print(f"Sherlock stderr for {display_name}:\n{completed_process.stderr}")
         found = _parse_sherlock_output(completed_process.stdout)[platform_key]
         result[platform_key] = found
         await on_platform_complete(display_name, found)

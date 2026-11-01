@@ -40,6 +40,7 @@ export default function PlatformCard({ platform, present, username, onCopy, copi
         </span>
         {present && (
           <div className="profile-actions">
+            <span className="verified-badge">✓ Verified</span>
             <a className="open-profile-link" href={profileUrl} target="_blank" rel="noreferrer">
               Open profile <span aria-hidden="true">↗</span>
             </a>

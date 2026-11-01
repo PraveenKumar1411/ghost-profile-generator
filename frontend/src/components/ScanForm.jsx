@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getApiErrorMessage, getScanResult, getScanStatus, startScan } from '../services/scanApi'
 import ScanProgress from './ScanProgress'
@@ -11,6 +11,7 @@ export default function ScanForm() {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('idle')
   const [job, setJob] = useState(null)
+  const scanAttemptRef = useRef(0)
   const loading = status === 'loading'
 
   async function handleSubmit(event) {
@@ -23,20 +24,26 @@ export default function ScanForm() {
 
     setError('')
     setStatus('loading')
+    const scanAttempt = scanAttemptRef.current
     try {
       const started = await startScan(value)
+      if (scanAttempt !== scanAttemptRef.current) return
       setJob({ scanId: started.scan_id, progress: 0, status: started.status })
-      const result = await waitForScan(started.scan_id)
+      const result = await waitForScan(started.scan_id, scanAttempt)
+      if (result === null) return
       setStatus('success')
       window.setTimeout(() => navigate('/results', { state: { result } }), 450)
     } catch (requestError) {
+      if (scanAttempt !== scanAttemptRef.current) return
       setError(getApiErrorMessage(requestError))
       setStatus('idle')
     }
 
-    async function waitForScan(scanId) {
+    async function waitForScan(scanId, attempt) {
       while (true) {
+        if (attempt !== scanAttemptRef.current) return null
         const snapshot = await getScanStatus(scanId)
+        if (attempt !== scanAttemptRef.current) return null
         setJob({ ...snapshot, scanId })
         if (snapshot.status === 'failed') {
           throw new Error(snapshot.failure_reason || 'The background scan failed.')
@@ -47,6 +54,13 @@ export default function ScanForm() {
         await new Promise((resolve) => window.setTimeout(resolve, 2000))
       }
     }
+  }
+
+  function handleCancel() {
+    scanAttemptRef.current += 1
+    setStatus('idle')
+    setJob(null)
+    setError('')
   }
 
   return (
@@ -70,9 +84,14 @@ export default function ScanForm() {
           />
         </div>
       </div>
-      <button type="submit" disabled={loading || status === 'success'} className="button-primary mt-2 w-full">
-        {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
-      </button>
+      <div className="scan-actions mt-2">
+        <button type="button" disabled={!loading} className="scan-cancel-button" onClick={handleCancel}>
+          cancel
+        </button>
+        <button type="submit" disabled={loading || status === 'success'} className="button-primary scan-submit-button">
+          {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
+        </button>
+      </div>
       <div id="scan-error" className="mt-2 min-h-5 text-sm text-rose-300" role="alert">{error}</div>
       {job?.status === 'failed' && (
         <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] px-3 py-2 text-xs text-rose-200">

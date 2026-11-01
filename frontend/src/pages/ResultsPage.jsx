@@ -7,6 +7,19 @@ import SystemStatusPanel from '../components/SystemStatusPanel'
 import { downloadReport, getApiErrorMessage } from '../services/scanApi'
 
 const PLATFORMS = ['github', 'reddit', 'twitter', 'instagram', 'linkedin', 'facebook', 'youtube', 'tiktok', 'threads', 'telegram']
+const PLATFORM_LABELS = {
+  github: 'GitHub',
+  reddit: 'Reddit',
+  twitter: 'Twitter / X',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  facebook: 'Facebook',
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  threads: 'Threads',
+  telegram: 'Telegram',
+}
+const PLATFORM_WEIGHTS = Object.fromEntries(PLATFORMS.map((platform) => [platform, 10]))
 const FALLBACK_RECOMMENDATIONS = [
   { title: 'Enable MFA', detail: 'Add a second layer of protection to every account.' },
   { title: 'Hide Public Email', detail: 'Reduce the chance of targeted phishing attempts.' },
@@ -60,12 +73,27 @@ function AnimatedMetric({ value, label, tone }) {
 }
 
 function RiskMeter({ score, level }) {
+  const [displayScore, setDisplayScore] = useState(0)
   const circumference = 2 * Math.PI * 50
   const tone = level === 'HIGH' ? 'risk-high' : level === 'MEDIUM' ? 'risk-medium' : 'risk-low'
+  useEffect(() => {
+    const start = window.performance.now()
+    const duration = 1200
+    let frame
+    function animate(now) {
+      const progress = Math.min((now - start) / duration, 1)
+      const eased = 1 - ((1 - progress) ** 3)
+      setDisplayScore(Math.round(score * eased))
+      if (progress < 1) frame = window.requestAnimationFrame(animate)
+    }
+    frame = window.requestAnimationFrame(animate)
+    return () => window.cancelAnimationFrame(frame)
+  }, [score])
+
   return (
     <div className={`risk-meter-wrap ${tone}`}>
       <div className="risk-meter-glow" />
-      <svg viewBox="0 0 120 120" className="risk-meter-svg" aria-label={`${score} out of 100 risk score`}>
+      <svg viewBox="0 0 120 120" className="risk-meter-svg" aria-label={`${displayScore} out of 100 risk score`}>
         <circle className="risk-meter-track" cx="60" cy="60" r="50" />
         <circle
           className="risk-meter-progress"
@@ -73,11 +101,11 @@ function RiskMeter({ score, level }) {
           cy="60"
           r="50"
           strokeDasharray={circumference}
-          strokeDashoffset={circumference - (circumference * score) / 100}
+          strokeDashoffset={circumference - (circumference * displayScore) / 100}
         />
       </svg>
       <div className="risk-meter-value">
-        <strong>{score}</strong>
+        <strong>{displayScore}</strong>
         <span>/ 100</span>
       </div>
     </div>
@@ -107,6 +135,20 @@ export default function ResultsPage() {
     : FALLBACK_RECOMMENDATIONS
   const previousScore = result.previous_risk_score ?? state?.previousScore
   const exposureChange = typeof previousScore === 'number' ? result.risk_score - previousScore : null
+  const scoreBreakdown = found.map((platform) => ({
+    label: `${PLATFORM_LABELS[platform]} Profile Found`,
+    value: PLATFORM_WEIGHTS[platform],
+  }))
+  const hasProfessionalSignal = result.linkedin
+  const hasSocialSignal = ['reddit', 'twitter', 'instagram', 'facebook', 'threads'].some((platform) => result[platform])
+  const hasDeveloperSignal = result.github
+  const hasContentSignal = result.youtube || result.tiktok
+  if (hasProfessionalSignal && hasSocialSignal) scoreBreakdown.push({ label: 'Professional + social exposure', value: 5 })
+  if (hasDeveloperSignal && hasContentSignal) scoreBreakdown.push({ label: 'Developer + content exposure', value: 5 })
+  const scoreBreakdownTotal = scoreBreakdown.reduce((total, item) => total + item.value, 0)
+  if (scoreBreakdownTotal !== result.risk_score) {
+    scoreBreakdown.push({ label: 'Risk score normalization', value: result.risk_score - scoreBreakdownTotal })
+  }
 
   async function handleCopy(url, platform) {
     await navigator.clipboard.writeText(url)
@@ -145,7 +187,10 @@ export default function ResultsPage() {
           <div className="scan-meta glass-card">
             <div><span>Username</span><strong>@{result.username}</strong></div>
             <div><span>Scan status</span><strong className="scan-status"><i /> Complete</strong></div>
-            <div><span>Scan timestamp</span><strong>{scanTimestamp}</strong></div>
+            <div><span>Generated time</span><strong>{scanTimestamp}</strong></div>
+            <div><span>Report ID</span><strong>{result.report_id ?? 'Pending'}</strong></div>
+            <div><span>Risk level</span><strong>{riskLevel}</strong></div>
+            <div><span>Privacy grade</span><strong>{result.privacy_grade ?? 'N/A'}</strong></div>
           </div>
         </section>
 
@@ -162,6 +207,12 @@ export default function ResultsPage() {
               {riskLevel} RISK
             </div>
             <div className="grade-badge"><span>Privacy grade</span><strong>{result.privacy_grade ?? 'N/A'}</strong></div>
+            <div className="score-breakdown">
+              <div className="score-breakdown-heading"><span>Why this score?</span><strong>{result.risk_score} total</strong></div>
+              {scoreBreakdown.length ? scoreBreakdown.map((item) => (
+                <div className="score-breakdown-row" key={item.label}><span>{item.value >= 0 ? '+' : ''}{String(item.value).padStart(2, '0')} {item.label}</span><b>{item.value}</b></div>
+              )) : <p className="score-breakdown-empty">No public signals contributed to this score.</p>}
+            </div>
           </div>
           <RiskMeter score={result.risk_score} level={riskLevel} />
         </section>
@@ -171,6 +222,12 @@ export default function ResultsPage() {
             <div><p className="section-kicker">02 / platform analysis</p><h2 className="section-title mt-2">Identity signal map</h2></div>
             <span className="section-count">{found.length} found <b>·</b> {missing.length} not found</span>
           </div>
+          {!found.length && (
+            <div className="empty-detection-state">
+              <strong>No public profiles were identified across monitored services.</strong>
+              <p>This may indicate a limited digital footprint.</p>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {PLATFORMS.map((platform, index) => (
             <PlatformCard key={platform} platform={platform} username={result.username} present={result[platform]} onCopy={handleCopy} copied={copiedPlatform === platform} index={index} />
@@ -191,11 +248,11 @@ export default function ResultsPage() {
             <p className="summary-note">Every public profile is a potential signal. Keep only the information you intend to be discoverable.</p>
           </div>
           <div className="glass-card threat-card">
-            <p className="section-kicker">04 / threat intelligence</p>
-            <h2 className="section-title mt-2">Threat Intelligence Summary</h2>
+            <p className="section-kicker">04 / intelligence summary</p>
+            <h2 className="section-title mt-2">Executive intelligence summary</h2>
             <div className={`threat-callout threat-callout-${riskLevel.toLowerCase()}`}>
               <span className="threat-pulse" />
-              <div><strong>{threat.title}</strong><p>{threat.detail}</p></div>
+              <div><strong>{threat.title}</strong><p>{result.insight || threat.detail}</p></div>
             </div>
           </div>
           <div className="glass-card recommendations-card">
@@ -229,6 +286,7 @@ export default function ResultsPage() {
         </section>
         {downloadError && <p className="mt-4 text-right text-sm text-rose-300" role="alert">{downloadError}</p>}
       </main>
+      <footer className="results-footer">Ghost Intelligence Platform v4.0 <span>·</span> Powered by Public OSINT Analysis</footer>
     </div>
   )
 }
