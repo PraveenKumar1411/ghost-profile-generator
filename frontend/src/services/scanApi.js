@@ -2,7 +2,7 @@ import axios from 'axios'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api/v1',
-  timeout: 15000,
+  timeout: 120000,
 })
 
 export async function scanUsername(username) {
@@ -50,8 +50,10 @@ export async function getSystemStatus() {
 
 export function getApiErrorMessage(error) {
   if (error.response?.data?.detail) return error.response.data.detail
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+    return 'Scan is taking longer than expected. Please retry in a moment.'
+  }
   if (error.message) return error.message
-  if (error.code === 'ECONNABORTED') return 'The scan timed out. Please try again.'
   if (!error.response) return 'Unable to reach the scanner. Is the API running?'
   return 'The scan could not be completed. Please try again.'
 }
