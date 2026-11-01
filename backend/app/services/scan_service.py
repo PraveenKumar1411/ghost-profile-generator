@@ -1,6 +1,7 @@
 """Sherlock-backed digital footprint scanning service."""
 
 import asyncio
+from html.parser import HTMLParser
 import re
 import subprocess
 import sys
@@ -122,6 +123,78 @@ PROFILE_REQUEST_HEADERS = {
 }
 
 
+class _ProfileMetadataParser(HTMLParser):
+    """Extract profile identity metadata from server-rendered HTML."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.metadata: dict[str, list[str]] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {name.casefold(): value or "" for name, value in attrs}
+        if tag.casefold() == "meta":
+            key = attributes.get("property") or attributes.get("name")
+            value = attributes.get("content")
+            if key and value:
+                self.metadata.setdefault(key.casefold(), []).append(value.casefold())
+        elif tag.casefold() == "link" and "canonical" in attributes.get("rel", "").casefold():
+            href = attributes.get("href")
+            if href:
+                self.metadata.setdefault("canonical", []).append(href.casefold())
+
+
+def _profile_metadata(body: str) -> dict[str, list[str]]:
+    """Read identity-bearing metadata without relying on visible username text."""
+
+    parser = _ProfileMetadataParser()
+    parser.feed(body)
+    return parser.metadata
+
+
+def _metadata_profile_evidence(
+    body: str,
+    final_url: str,
+    username: str,
+    expected_path: str,
+    allowed_hosts: set[str],
+) -> str | None:
+    """Return the strongest metadata signal that identifies the requested profile."""
+
+    parsed_final_url = urlsplit(final_url)
+    if parsed_final_url.netloc.casefold() not in allowed_hosts:
+        return None
+    expected_path = expected_path.rstrip("/").casefold()
+    metadata = _profile_metadata(body)
+    for key in ("canonical", "og:url"):
+        for value in metadata.get(key, []):
+            parsed_value = urlsplit(value)
+            if (
+                parsed_value.netloc.casefold() in allowed_hosts
+                and parsed_value.path.rstrip("/").casefold() == expected_path
+            ):
+                return key
+    username_marker = f"@{username.casefold()}"
+    for key in ("og:title", "og:description", "description", "twitter:title"):
+        if any(username_marker in value for value in metadata.get(key, [])):
+            return key
+    return None
+
+
+def _log_detection(
+    platform_key: str,
+    status: int | None,
+    final_url: str | None,
+    decision: PlatformStatus,
+    method: str,
+) -> None:
+    """Emit the evidence used for a platform decision."""
+
+    print(
+        f"Platform detection: platform={platform_key} status={status} "
+        f"final_url={final_url} decision={decision} method={method}"
+    )
+
+
 def _empty_scan_result() -> ScanResult:
     """Create a result with every platform initially unverified."""
 
@@ -172,6 +245,27 @@ def _request_profile(
         return None, None, f"Network failure: {detail}", url
 
 
+def _request_threads_canonical(
+    username: str,
+    timeout: int,
+) -> tuple[int, str, str, str] | tuple[None, None, None, None]:
+    """Fetch Threads' canonical profile URL for login-redirect recovery."""
+
+    url = f"https://www.threads.com/@{username}/"
+    request = Request(url, headers=PROFILE_REQUEST_HEADERS)
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            body = response.read(65536).decode("utf-8", errors="ignore").casefold()
+            return response.status, response.url, body, url
+    except HTTPError as exc:
+        return exc.code, exc.url, "", url
+    except TimeoutError:
+        return None, None, "Network Timeout", url
+    except (URLError, OSError) as exc:
+        detail = exc.reason if isinstance(exc, URLError) else str(exc)
+        return None, None, f"Network failure: {detail}", url
+
+
 def _blocked_response(status: int, final_url: str, body: str) -> str | None:
     """Return a block reason for common rate-limit, WAF, and login responses."""
 
@@ -184,16 +278,14 @@ def _blocked_response(status: int, final_url: str, body: str) -> str | None:
         return f"HTTP {status} Access Restricted"
     if path.startswith("/challenge"):
         return "Redirected to Challenge Page"
-    if any(
-        marker in body
-        for marker in (
-            "captcha",
-            "challenge-running",
-            "cf-chl-",
-            "rate limit",
-        )
+    for marker, description in (
+        ("captcha", "captcha marker"),
+        ("challenge-running", "challenge-running marker"),
+        ("cf-chl-", "Cloudflare challenge marker"),
+        ("rate limit", "rate-limit marker"),
     ):
-        return "Anti-bot or rate-limit challenge"
+        if marker in body:
+            return f"Anti-bot protection detected ({description})"
     return None
 
 
@@ -230,20 +322,34 @@ def _validate_twitter(username: str, timeout: int) -> tuple[PlatformStatus, str 
 def _validate_instagram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
     status, final_url, body, _ = _request_profile("instagram", username, timeout)
     if status is None:
+        _log_detection("instagram", status, final_url, "UNVERIFIED", "network result")
         return "UNVERIFIED", body
     if status == 404:
+        _log_detection("instagram", status, final_url, "NOT_FOUND", "HTTP 404")
         return "NOT_FOUND", "HTTP 404 Not Found"
     login_wall = _login_wall_response(final_url)
     if login_wall:
+        _log_detection("instagram", status, final_url, "UNVERIFIED", "login redirect")
         return "UNVERIFIED", login_wall
     blocked = _blocked_response(status, final_url, body)
     if blocked:
+        _log_detection("instagram", status, final_url, "BLOCKED", blocked)
         return "BLOCKED", blocked
     path = urlsplit(final_url).path.rstrip("/").casefold()
     if status in {200, 301, 302} and path == f"/{username.casefold()}":
-        if username.casefold() in body:
+        method = _metadata_profile_evidence(
+            body,
+            final_url,
+            username,
+            f"/{username}",
+            {"instagram.com", "www.instagram.com"},
+        )
+        if method:
+            _log_detection("instagram", status, final_url, "FOUND", method)
             return "FOUND", None
-        return "UNVERIFIED", "HTTP 200 profile content could not be confirmed"
+        _log_detection("instagram", status, final_url, "UNVERIFIED", "no profile metadata")
+        return "UNVERIFIED", "HTTP 200 profile metadata could not be confirmed"
+    _log_detection("instagram", status, final_url, "UNVERIFIED", "unexpected redirect")
     return "UNVERIFIED", f"Unexpected redirect to {final_url}"
 
 
@@ -278,11 +384,100 @@ def _validate_youtube(username: str, timeout: int) -> tuple[PlatformStatus, str 
 
 
 def _validate_tiktok(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
-    return _validate_path_profile("tiktok", username, timeout, {"tiktok.com", "www.tiktok.com"}, f"/@{username.casefold()}")
+    status, final_url, body, _ = _request_profile("tiktok", username, timeout)
+    if status is None:
+        _log_detection("tiktok", status, final_url, "UNVERIFIED", "network result")
+        return "UNVERIFIED", body
+    if status == 404:
+        _log_detection("tiktok", status, final_url, "NOT_FOUND", "HTTP 404")
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    blocked = _blocked_response(status, final_url, body)
+    if blocked:
+        _log_detection("tiktok", status, final_url, "BLOCKED", blocked)
+        return "BLOCKED", blocked
+    expected_path = f"/@{username.casefold()}"
+    parsed_path = urlsplit(final_url).path.rstrip("/").casefold()
+    if status in {200, 301, 302} and parsed_path == expected_path:
+        method = _metadata_profile_evidence(
+            body,
+            final_url,
+            username,
+            expected_path,
+            {"tiktok.com", "www.tiktok.com"},
+        )
+        if method:
+            _log_detection("tiktok", status, final_url, "FOUND", method)
+            return "FOUND", None
+        _log_detection("tiktok", status, final_url, "UNVERIFIED", "profile metadata unavailable")
+        return "UNVERIFIED", "TikTok profile metadata could not be confirmed"
+    if parsed_path == "/in/about":
+        _log_detection("tiktok", status, final_url, "BLOCKED", "generic TikTok access wall")
+        return "BLOCKED", "Redirected to TikTok /in/about; profile access wall or regional restriction"
+    _log_detection("tiktok", status, final_url, "UNVERIFIED", "unexpected redirect")
+    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
 
 
 def _validate_threads(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
-    return _validate_path_profile("threads", username, timeout, {"threads.net", "www.threads.net", "threads.com", "www.threads.com"}, f"/@{username.casefold()}")
+    status, final_url, body, _ = _request_profile("threads", username, timeout)
+    if status is None:
+        _log_detection("threads", status, final_url, "UNVERIFIED", "network result")
+        return "UNVERIFIED", body
+    if status == 404:
+        _log_detection("threads", status, final_url, "NOT_FOUND", "HTTP 404")
+        return "NOT_FOUND", "HTTP 404 Not Found"
+    blocked = _blocked_response(status, final_url, body)
+    if blocked:
+        _log_detection("threads", status, final_url, "BLOCKED", blocked)
+        return "BLOCKED", blocked
+    expected_path = f"/@{username.casefold()}"
+    parsed_path = urlsplit(final_url).path.rstrip("/").casefold()
+    allowed_hosts = {"threads.net", "www.threads.net", "threads.com", "www.threads.com"}
+    if status in {200, 301, 302} and parsed_path == expected_path:
+        method = _metadata_profile_evidence(
+            body,
+            final_url,
+            username,
+            expected_path,
+            allowed_hosts,
+        )
+        if method:
+            _log_detection("threads", status, final_url, "FOUND", method)
+            return "FOUND", None
+    login_wall = _login_wall_response(final_url)
+    if login_wall:
+        canonical_status, canonical_url, canonical_body, _ = _request_threads_canonical(
+            username,
+            timeout,
+        )
+        canonical_method = (
+            _metadata_profile_evidence(
+                canonical_body,
+                canonical_url,
+                username,
+                expected_path,
+                allowed_hosts,
+            )
+            if canonical_status in {200, 301, 302}
+            and canonical_url is not None
+            and canonical_body is not None
+            else None
+        )
+        if canonical_method:
+            _log_detection(
+                "threads",
+                canonical_status,
+                canonical_url,
+                "FOUND",
+                f"canonical retry {canonical_method}",
+            )
+            return "FOUND", None
+        _log_detection("threads", status, final_url, "UNVERIFIED", "login redirect without profile evidence")
+        return (
+            "UNVERIFIED",
+            "Login Required; canonical retry contained no profile metadata",
+        )
+    _log_detection("threads", status, final_url, "UNVERIFIED", "no profile metadata")
+    return "UNVERIFIED", f"Unable to confirm Threads profile at {final_url}"
 
 
 def _validate_telegram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
