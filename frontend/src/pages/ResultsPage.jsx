@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation } from 'react-router-dom'
+import { ExternalLink, History } from 'lucide-react'
 import TopBar from '../components/TopBar'
 import PlatformCard from '../components/PlatformCard'
 import ExposureCharts from '../components/ExposureCharts'
@@ -180,8 +181,19 @@ export default function ResultsPage() {
 
   return (
     <div className="app-shell results-shell">
-      <TopBar showScanAgain />
+      <TopBar showScanAgain showHistory={false} />
       <main className="mx-auto w-full max-w-6xl px-5 pb-20 sm:px-8">
+        <div className="pt-6">
+          <Link to="/history" className="topbar-nav-link" aria-label="Open scan history">
+            <span className="topbar-nav-leading">
+              <History className="topbar-nav-icon" aria-hidden="true" />
+              <span className="topbar-nav-divider" aria-hidden="true" />
+              <span className="topbar-nav-status" aria-hidden="true" />
+            </span>
+            <span className="topbar-nav-copy"><span>SCAN</span> <strong>HISTORY</strong></span>
+            <span className="topbar-nav-arrow" aria-hidden="true"><ExternalLink /></span>
+          </Link>
+        </div>
         <section className="results-hero">
           <div>
             <p className="section-kicker">ghost intelligence / scan report</p>
