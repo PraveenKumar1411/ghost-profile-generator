@@ -86,7 +86,7 @@ export default function ScanForm() {
       </div>
       <div className="scan-actions mt-2">
         <button type="button" disabled={!loading} className="scan-cancel-button" onClick={handleCancel}>
-          <span aria-hidden="true">✕</span> cancel
+          CANCEL
         </button>
         <button type="submit" disabled={loading || status === 'success'} className="button-primary scan-submit-button">
           {loading ? <><span className="spinner" /> scanning...</> : status === 'success' ? <>scan complete <span aria-hidden="true">✓</span></> : job?.status === 'failed' ? <>retry scan <span aria-hidden="true">↻</span></> : <>scan identity <span aria-hidden="true">→</span></>}
