@@ -7,16 +7,16 @@ import subprocess
 import sys
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Literal, TypedDict
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import quote_plus, unquote, urlsplit
 from urllib.request import Request, urlopen
 
 from app.config import get_settings
 
 
-PlatformStatus = Literal["FOUND", "NOT_FOUND", "UNVERIFIED", "BLOCKED"]
+PlatformStatus = Literal["FOUND", "LIKELY_FOUND", "NOT_FOUND", "RESTRICTED"]
 
 
 class ScanResult(TypedDict):
@@ -119,9 +119,12 @@ FOUND_RESULT_PATTERN = re.compile(
 )
 PROFILE_REQUEST_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (compatible; GhostProfileGenerator/1.0; "
-        "+https://github.com/PraveenKumar1411/ghost-profile-generator)"
-    )
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
 }
 
 
@@ -131,6 +134,10 @@ class _ProfileMetadataParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.metadata: dict[str, list[str]] = {}
+        self._json_ld_depth = 0
+        self._json_ld_parts: list[str] = []
+        self._title_depth = 0
+        self._title_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {name.casefold(): value or "" for name, value in attrs}
@@ -143,6 +150,30 @@ class _ProfileMetadataParser(HTMLParser):
             href = attributes.get("href")
             if href:
                 self.metadata.setdefault("canonical", []).append(href.casefold())
+        elif tag.casefold() == "script" and attributes.get("type", "").casefold() == "application/ld+json":
+            self._json_ld_depth = 1
+        elif tag.casefold() == "title":
+            self._title_depth = 1
+
+    def handle_data(self, data: str) -> None:
+        if self._json_ld_depth:
+            self._json_ld_parts.append(data)
+        if self._title_depth:
+            self._title_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script" and self._json_ld_depth:
+            json_ld = "".join(self._json_ld_parts).casefold()
+            if json_ld:
+                self.metadata.setdefault("json-ld", []).append(json_ld)
+            self._json_ld_depth = 0
+            self._json_ld_parts = []
+        elif tag.casefold() == "title" and self._title_depth:
+            title = "".join(self._title_parts).casefold()
+            if title:
+                self.metadata.setdefault("title", []).append(title)
+            self._title_depth = 0
+            self._title_parts = []
 
 
 def _profile_metadata(body: str) -> dict[str, list[str]]:
@@ -162,11 +193,11 @@ def _metadata_profile_evidence(
 ) -> str | None:
     """Return the strongest metadata signal that identifies the requested profile."""
 
-    parsed_final_url = urlsplit(final_url)
-    if parsed_final_url.netloc.casefold() not in allowed_hosts:
-        return None
     expected_path = expected_path.rstrip("/").casefold()
     metadata = _profile_metadata(body)
+    final_path = urlsplit(final_url).path.rstrip("/").casefold()
+    if final_path == expected_path and metadata.get("profile:id"):
+        return "profile:id"
     for key in ("canonical", "og:url"):
         for value in metadata.get(key, []):
             parsed_value = urlsplit(value)
@@ -175,11 +206,187 @@ def _metadata_profile_evidence(
                 and parsed_value.path.rstrip("/").casefold() == expected_path
             ):
                 return key
-    username_marker = f"@{username.casefold()}"
-    for key in ("og:title", "og:description", "description", "twitter:title"):
-        if any(username_marker in value for value in metadata.get(key, [])):
+    username_casefolded = username.casefold()
+    username_marker = f"@{username_casefolded}"
+    for key in ("og:title", "og:description", "description", "twitter:title", "title", "profile:id", "json-ld"):
+        if any(
+            username_marker in value
+            or re.search(rf"(?<![a-z0-9]){re.escape(username_casefolded)}(?![a-z0-9])", value)
+            for value in metadata.get(key, [])
+        ):
             return key
     return None
+
+
+NOT_FOUND_MARKERS = (
+    "page isn't available",
+    "page is not available",
+    "sorry, this page isn't available",
+    "the link you followed may be broken",
+    "this page could not be found",
+    "user not found",
+    "profile not found",
+    "account doesn't exist",
+    "account does not exist",
+    "username isn't available",
+    "username is not available",
+)
+SEARCH_ENGINE_URLS = (
+    "https://www.google.com/search?q={query}",
+    "https://www.bing.com/search?q={query}",
+    "https://html.duckduckgo.com/html/?q={query}",
+)
+PLATFORM_RESTRICTED_MESSAGES = {
+    "instagram": "Public verification restricted by platform.",
+    "facebook": "Public verification restricted by platform.",
+    "threads": "Insufficient public profile data available.",
+}
+
+
+def _explicit_not_found(body: str) -> bool:
+    """Recognize platform absence language without treating access failures as absence."""
+
+    return any(marker in body for marker in NOT_FOUND_MARKERS)
+
+
+def _search_public_references(
+    platform_key: str,
+    username: str,
+    timeout: int,
+) -> list[str]:
+    """Collect distinct indexed profile references from public search engines."""
+
+    host_patterns = {
+        "instagram": ("instagram.com",),
+        "facebook": ("facebook.com",),
+        "threads": ("threads.net", "threads.com"),
+    }
+    query = quote_plus(f"site:{host_patterns[platform_key][0]} {username}")
+    references: set[str] = set()
+    for engine_url in SEARCH_ENGINE_URLS:
+        status, final_url, body, _ = _request_url(
+            engine_url.format(query=query),
+            timeout,
+        )
+        if status is None or not body:
+            continue
+        candidates = re.findall(r"https?://[^\"'<>\\s]+", body)
+        for candidate in candidates:
+            candidate = unquote(candidate).rstrip(").,;")
+            parsed = urlsplit(candidate)
+            host = parsed.netloc.casefold().split(":", 1)[0]
+            path = parsed.path.rstrip("/").casefold()
+            if not any(host == allowed or host.endswith(f".{allowed}") for allowed in host_patterns[platform_key]):
+                continue
+            username_segment = username.casefold()
+            if platform_key == "threads":
+                matches = path == f"/@{username_segment}" or f"/@{username_segment}/" in path
+            else:
+                matches = path.strip("/").split("/")[0] == username_segment
+            if matches:
+                references.add(f"{parsed.scheme}://{parsed.netloc}{parsed.path}".casefold())
+    return sorted(references)
+
+
+def _request_url(
+    url: str,
+    timeout: int,
+) -> tuple[int | None, str | None, str, str]:
+    """Fetch a URL with the same retry and browser-header policy as profile requests."""
+
+    last_result: tuple[int | None, str | None, str, str] = (None, None, "Network failure", url)
+    for attempt in range(3):
+        request = Request(url, headers=PROFILE_REQUEST_HEADERS)
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                body = response.read(131072).decode("utf-8", errors="ignore").casefold()
+                return response.status, response.url, body, url
+        except HTTPError as exc:
+            last_result = (
+                exc.code,
+                exc.url,
+                exc.read(131072).decode("utf-8", errors="ignore").casefold(),
+                url,
+            )
+            if exc.code not in {408, 425, 429} and exc.code < 500:
+                return last_result
+        except (TimeoutError, URLError, OSError) as exc:
+            detail = getattr(exc, "reason", str(exc))
+            last_result = (None, None, f"Network failure: {detail}", url)
+        if attempt < 2:
+            sleep(0.2 * (attempt + 1))
+    return last_result
+
+
+def _fallback_platform_status(
+    platform_key: str,
+    username: str,
+    timeout: int,
+) -> tuple[PlatformStatus, str | None]:
+    """Use independent public references before declaring a platform restricted."""
+
+    references = _search_public_references(platform_key, username, timeout)
+    if len(references) >= 2:
+        _log_detection(
+            platform_key,
+            None,
+            None,
+            "LIKELY_FOUND",
+            f"independent public references={len(references)}",
+        )
+        return "LIKELY_FOUND", "Detected through independent public sources."
+    message = PLATFORM_RESTRICTED_MESSAGES[platform_key]
+    _log_detection(platform_key, None, None, "RESTRICTED", message)
+    return "RESTRICTED", message
+
+
+def _validate_public_profile(
+    platform_key: str,
+    username: str,
+    timeout: int,
+    expected_path: str,
+    allowed_hosts: set[str],
+) -> tuple[PlatformStatus, str | None]:
+    """Verify a profile using direct metadata, explicit absence, then public references."""
+
+    status, final_url, body, _ = _request_profile(platform_key, username, timeout)
+    if status == 404 or _explicit_not_found(body):
+        _log_detection(platform_key, status, final_url, "NOT_FOUND", "explicit absence evidence")
+        return "NOT_FOUND", None
+    metadata_method = (
+        _metadata_profile_evidence(body, final_url or "", username, expected_path, allowed_hosts)
+        if final_url
+        else None
+    )
+    if metadata_method:
+        _log_detection(platform_key, status, final_url, "FOUND", metadata_method)
+        return "FOUND", None
+    if platform_key == "threads":
+        canonical_status, canonical_url, canonical_body, _ = _request_threads_canonical(
+            username,
+            timeout,
+        )
+        canonical_method = (
+            _metadata_profile_evidence(
+                canonical_body,
+                canonical_url or "",
+                username,
+                expected_path,
+                allowed_hosts,
+            )
+            if canonical_url and canonical_body
+            else None
+        )
+        if canonical_method:
+            _log_detection(
+                platform_key,
+                canonical_status,
+                canonical_url,
+                "FOUND",
+                f"canonical metadata {canonical_method}",
+            )
+            return "FOUND", None
+    return _fallback_platform_status(platform_key, username, timeout)
 
 
 def _log_detection(
@@ -203,7 +410,7 @@ def _empty_scan_result() -> ScanResult:
     return {
         **{platform_key: False for platform_key in PLATFORM_NAMES.values()},
         "verification_status": {
-            platform_key: "UNVERIFIED"
+            platform_key: "RESTRICTED"
             for platform_key in PLATFORM_NAMES.values()
         },
         "verification_reasons": {},
@@ -233,18 +440,7 @@ def _request_profile(
     """Fetch a profile once and return status, final URL, and response body."""
 
     url = PLATFORM_URL_PATTERNS[platform_key].format(username=username)
-    request = Request(url, headers=PROFILE_REQUEST_HEADERS)
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            body = response.read(65536).decode("utf-8", errors="ignore").casefold()
-            return response.status, response.url, body, url
-    except HTTPError as exc:
-        return exc.code, exc.url, "", url
-    except TimeoutError:
-        return None, None, "Network Timeout", url
-    except (URLError, OSError) as exc:
-        detail = exc.reason if isinstance(exc, URLError) else str(exc)
-        return None, None, f"Network failure: {detail}", url
+    return _request_url(url, timeout)
 
 
 def _request_threads_canonical(
@@ -254,18 +450,7 @@ def _request_threads_canonical(
     """Fetch Threads' canonical profile URL for login-redirect recovery."""
 
     url = f"https://www.threads.com/@{username}/"
-    request = Request(url, headers=PROFILE_REQUEST_HEADERS)
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            body = response.read(65536).decode("utf-8", errors="ignore").casefold()
-            return response.status, response.url, body, url
-    except HTTPError as exc:
-        return exc.code, exc.url, "", url
-    except TimeoutError:
-        return None, None, "Network Timeout", url
-    except (URLError, OSError) as exc:
-        detail = exc.reason if isinstance(exc, URLError) else str(exc)
-        return None, None, f"Network failure: {detail}", url
+    return _request_url(url, timeout)
 
 
 def _blocked_response(status: int, final_url: str, body: str) -> str | None:
@@ -292,11 +477,11 @@ def _blocked_response(status: int, final_url: str, body: str) -> str | None:
 
 
 def _login_wall_response(final_url: str) -> str | None:
-    """Identify a login wall without treating it as proof of absence or blocking."""
+    """Identify a login redirect without treating it as proof of absence."""
 
     path = urlsplit(final_url).path.casefold()
     if path.startswith(("/login", "/accounts/login", "/signin", "/sign-in")):
-        return "Login Required"
+        return "login redirect"
     return None
 
 
@@ -322,37 +507,13 @@ def _validate_twitter(username: str, timeout: int) -> tuple[PlatformStatus, str 
 
 
 def _validate_instagram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
-    status, final_url, body, _ = _request_profile("instagram", username, timeout)
-    if status is None:
-        _log_detection("instagram", status, final_url, "UNVERIFIED", "network result")
-        return "UNVERIFIED", body
-    if status == 404:
-        _log_detection("instagram", status, final_url, "NOT_FOUND", "HTTP 404")
-        return "NOT_FOUND", "HTTP 404 Not Found"
-    login_wall = _login_wall_response(final_url)
-    if login_wall:
-        _log_detection("instagram", status, final_url, "UNVERIFIED", "login redirect")
-        return "UNVERIFIED", login_wall
-    blocked = _blocked_response(status, final_url, body)
-    if blocked:
-        _log_detection("instagram", status, final_url, "BLOCKED", blocked)
-        return "BLOCKED", blocked
-    path = urlsplit(final_url).path.rstrip("/").casefold()
-    if status in {200, 301, 302} and path == f"/{username.casefold()}":
-        method = _metadata_profile_evidence(
-            body,
-            final_url,
-            username,
-            f"/{username}",
-            {"instagram.com", "www.instagram.com"},
-        )
-        if method:
-            _log_detection("instagram", status, final_url, "FOUND", method)
-            return "FOUND", None
-        _log_detection("instagram", status, final_url, "UNVERIFIED", "no profile metadata")
-        return "UNVERIFIED", "HTTP 200 profile metadata could not be confirmed"
-    _log_detection("instagram", status, final_url, "UNVERIFIED", "unexpected redirect")
-    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+    return _validate_public_profile(
+        "instagram",
+        username,
+        timeout,
+        f"/{username}",
+        {"instagram.com", "www.instagram.com"},
+    )
 
 
 def _validate_linkedin(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
@@ -360,25 +521,13 @@ def _validate_linkedin(username: str, timeout: int) -> tuple[PlatformStatus, str
 
 
 def _validate_facebook(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
-    status, final_url, body, _ = _request_profile("facebook", username, timeout)
-    if status is None:
-        return "UNVERIFIED", body
-    if status == 404:
-        return "NOT_FOUND", "HTTP 404 Not Found"
-    login_wall = _login_wall_response(final_url)
-    if login_wall:
-        return "UNVERIFIED", login_wall
-    blocked = _blocked_response(status, final_url, body)
-    if blocked:
-        return "BLOCKED", blocked
-    parsed = urlsplit(final_url)
-    if parsed.netloc.casefold() not in {"facebook.com", "www.facebook.com"}:
-        return "BLOCKED", f"Redirected away from Facebook to {final_url}"
-    if status in {200, 301, 302} and parsed.path.rstrip("/").casefold() == f"/{username.casefold()}":
-        if username.casefold() in body:
-            return "FOUND", None
-        return "UNVERIFIED", "HTTP 200 Facebook content could not be confirmed"
-    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+    return _validate_public_profile(
+        "facebook",
+        username,
+        timeout,
+        f"/{username}",
+        {"facebook.com", "www.facebook.com"},
+    )
 
 
 def _validate_youtube(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
@@ -388,15 +537,15 @@ def _validate_youtube(username: str, timeout: int) -> tuple[PlatformStatus, str 
 def _validate_tiktok(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
     status, final_url, body, _ = _request_profile("tiktok", username, timeout)
     if status is None:
-        _log_detection("tiktok", status, final_url, "UNVERIFIED", "network result")
-        return "UNVERIFIED", body
+        _log_detection("tiktok", status, final_url, "RESTRICTED", "network result")
+        return "RESTRICTED", None
     if status == 404:
         _log_detection("tiktok", status, final_url, "NOT_FOUND", "HTTP 404")
         return "NOT_FOUND", "HTTP 404 Not Found"
     blocked = _blocked_response(status, final_url, body)
     if blocked:
-        _log_detection("tiktok", status, final_url, "BLOCKED", blocked)
-        return "BLOCKED", blocked
+        _log_detection("tiktok", status, final_url, "RESTRICTED", blocked)
+        return "RESTRICTED", None
     expected_path = f"/@{username.casefold()}"
     parsed_path = urlsplit(final_url).path.rstrip("/").casefold()
     if status in {200, 301, 302} and parsed_path == expected_path:
@@ -410,99 +559,46 @@ def _validate_tiktok(username: str, timeout: int) -> tuple[PlatformStatus, str |
         if method:
             _log_detection("tiktok", status, final_url, "FOUND", method)
             return "FOUND", None
-        _log_detection("tiktok", status, final_url, "UNVERIFIED", "profile metadata unavailable")
-        return "UNVERIFIED", "TikTok profile metadata could not be confirmed"
+        _log_detection("tiktok", status, final_url, "RESTRICTED", "profile metadata unavailable")
+        return "RESTRICTED", None
     if parsed_path == "/in/about":
-        _log_detection("tiktok", status, final_url, "BLOCKED", "generic TikTok access wall")
-        return "BLOCKED", "Redirected to TikTok /in/about; profile access wall or regional restriction"
-    _log_detection("tiktok", status, final_url, "UNVERIFIED", "unexpected redirect")
-    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+        _log_detection("tiktok", status, final_url, "RESTRICTED", "generic TikTok access wall")
+        return "RESTRICTED", None
+    _log_detection("tiktok", status, final_url, "RESTRICTED", "unexpected redirect")
+    return "RESTRICTED", None
 
 
 def _validate_threads(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
-    status, final_url, body, _ = _request_profile("threads", username, timeout)
-    if status is None:
-        _log_detection("threads", status, final_url, "UNVERIFIED", "network result")
-        return "UNVERIFIED", body
-    if status == 404:
-        _log_detection("threads", status, final_url, "NOT_FOUND", "HTTP 404")
-        return "NOT_FOUND", "HTTP 404 Not Found"
-    blocked = _blocked_response(status, final_url, body)
-    if blocked:
-        _log_detection("threads", status, final_url, "BLOCKED", blocked)
-        return "BLOCKED", blocked
-    expected_path = f"/@{username.casefold()}"
-    parsed_path = urlsplit(final_url).path.rstrip("/").casefold()
-    allowed_hosts = {"threads.net", "www.threads.net", "threads.com", "www.threads.com"}
-    if status in {200, 301, 302} and parsed_path == expected_path:
-        method = _metadata_profile_evidence(
-            body,
-            final_url,
-            username,
-            expected_path,
-            allowed_hosts,
-        )
-        if method:
-            _log_detection("threads", status, final_url, "FOUND", method)
-            return "FOUND", None
-    login_wall = _login_wall_response(final_url)
-    if login_wall:
-        canonical_status, canonical_url, canonical_body, _ = _request_threads_canonical(
-            username,
-            timeout,
-        )
-        canonical_method = (
-            _metadata_profile_evidence(
-                canonical_body,
-                canonical_url,
-                username,
-                expected_path,
-                allowed_hosts,
-            )
-            if canonical_status in {200, 301, 302}
-            and canonical_url is not None
-            and canonical_body is not None
-            else None
-        )
-        if canonical_method:
-            _log_detection(
-                "threads",
-                canonical_status,
-                canonical_url,
-                "FOUND",
-                f"canonical retry {canonical_method}",
-            )
-            return "FOUND", None
-        _log_detection("threads", status, final_url, "UNVERIFIED", "login redirect without profile evidence")
-        return (
-            "UNVERIFIED",
-            "Login Required; canonical retry contained no profile metadata",
-        )
-    _log_detection("threads", status, final_url, "UNVERIFIED", "no profile metadata")
-    return "UNVERIFIED", f"Unable to confirm Threads profile at {final_url}"
+    return _validate_public_profile(
+        "threads",
+        username,
+        timeout,
+        f"/@{username}",
+        {"threads.net", "www.threads.net", "threads.com", "www.threads.com"},
+    )
 
 
 def _validate_telegram(username: str, timeout: int) -> tuple[PlatformStatus, str | None]:
     status, final_url, body, _ = _request_profile("telegram", username, timeout)
     if status is None:
-        return "UNVERIFIED", body
+        return "RESTRICTED", None
     if status == 404:
         return "NOT_FOUND", "HTTP 404 Not Found"
     login_wall = _login_wall_response(final_url)
     if login_wall:
-        return "UNVERIFIED", login_wall
+        return "RESTRICTED", None
     blocked = _blocked_response(status, final_url, body)
     if blocked:
-        return "BLOCKED", blocked
+        return "RESTRICTED", None
     host = urlsplit(final_url).netloc.casefold()
     path = urlsplit(final_url).path.rstrip("/").casefold()
     if host not in {"t.me", "telegram.me"}:
-        return "BLOCKED", f"Redirected away from Telegram to {final_url}"
+        return "RESTRICTED", None
     if status in {200, 301, 302} and path == f"/{username.casefold()}":
         if f"@{username.casefold()}" in body or "contact @" in body:
             return "FOUND", None
-        return "UNVERIFIED", "HTTP 200 Telegram profile content could not be confirmed"
-    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+        return "RESTRICTED", None
+    return "RESTRICTED", None
 
 
 def _validate_path_profile(
@@ -517,21 +613,21 @@ def _validate_path_profile(
 
     status, final_url, body, _ = _request_profile(platform_key, username, timeout)
     if status is None:
-        return "UNVERIFIED", body
+        return "RESTRICTED", None
     if status == 404:
         return "NOT_FOUND", "HTTP 404 Not Found"
     login_wall = _login_wall_response(final_url)
     if login_wall:
-        return "UNVERIFIED", login_wall
+        return "RESTRICTED", None
     blocked = _blocked_response(status, final_url, body if inspect_body else "")
     if blocked:
-        return "BLOCKED", blocked
+        return "RESTRICTED", None
     parsed = urlsplit(final_url)
     if parsed.netloc.casefold() not in allowed_hosts:
-        return "UNVERIFIED", f"Generic redirect to {final_url}"
+        return "RESTRICTED", None
     if status in {200, 301, 302} and parsed.path.rstrip("/").casefold() == expected_path:
         return "FOUND", None
-    return "UNVERIFIED", f"Unexpected redirect to {final_url}"
+    return "RESTRICTED", None
 
 
 PLATFORM_VALIDATORS: dict[str, Callable[[str, int], tuple[PlatformStatus, str | None]]] = {
@@ -582,9 +678,18 @@ def _apply_platform_result(
     """Apply a verification outcome without conflating uncertainty with absence."""
 
     result["verification_status"][platform_key] = status
-    result[platform_key] = status == "FOUND"
-    if status in {"UNVERIFIED", "BLOCKED"} and reason:
-        result["verification_reasons"][platform_key] = reason
+    result[platform_key] = status in {"FOUND", "LIKELY_FOUND"}
+    if status == "LIKELY_FOUND":
+        result["verification_reasons"][platform_key] = (
+            "Detected through independent public sources."
+        )
+    elif status == "RESTRICTED":
+        result["verification_reasons"][platform_key] = (
+            reason or PLATFORM_RESTRICTED_MESSAGES.get(
+                platform_key,
+                "Public verification restricted by platform.",
+            )
+        )
     else:
         result["verification_reasons"].pop(platform_key, None)
 
@@ -627,13 +732,13 @@ async def scan_username_with_progress(
                 timeout=settings.scan_platform_timeout,
             )
         except asyncio.TimeoutError:
-            platform_status = "UNVERIFIED"
+            platform_status = "RESTRICTED"
             reason = (
                 f"Platform verification timeout after "
                 f"{settings.scan_platform_timeout}s"
             )
         except Exception as exc:
-            platform_status = "UNVERIFIED"
+            platform_status = "RESTRICTED"
             reason = f"Platform verification failed: {exc}"
         _apply_platform_result(result, platform_key, platform_status, reason)
         completed_at = datetime.now(timezone.utc)
@@ -643,7 +748,10 @@ async def scan_username_with_progress(
             f"completed_at={completed_at.isoformat()} duration={duration:.3f}s "
             f"status={platform_status} reason={reason or 'verified'}"
         )
-        await on_platform_complete(display_name, platform_status == "FOUND")
+        await on_platform_complete(
+            display_name,
+            platform_status in {"FOUND", "LIKELY_FOUND"},
+        )
 
     return result
 
@@ -695,9 +803,9 @@ async def _verify_platform_with_timeout(
             timeout=min(process_timeout, platform_timeout),
         )
     except subprocess.TimeoutExpired:
-        return "UNVERIFIED", f"Sherlock timeout after {platform_timeout}s"
+        return "RESTRICTED", None
     except (FileNotFoundError, OSError) as exc:
-        return "UNVERIFIED", f"Sherlock unavailable: {exc}"
+        return "RESTRICTED", None
     print(
         f"Sherlock completed: platform={display_name} "
         f"duration={perf_counter() - sherlock_started:.3f}s "
@@ -706,7 +814,7 @@ async def _verify_platform_with_timeout(
 
     if completed_process.returncode not in (0, 1):
         error = completed_process.stderr.strip()
-        return "UNVERIFIED", error or f"Sherlock failed for {display_name}"
+        return "RESTRICTED", None
 
     parsed = _parse_sherlock_output(completed_process.stdout)
     if parsed[platform_key]:

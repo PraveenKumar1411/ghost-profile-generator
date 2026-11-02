@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 PrivacyGrade = Literal["A+", "A", "B", "C", "D", "F"]
-VerificationStatus = Literal["FOUND", "NOT_FOUND", "UNVERIFIED", "BLOCKED"]
+VerificationStatus = Literal["FOUND", "LIKELY_FOUND", "NOT_FOUND", "RESTRICTED"]
 
 
 class ScanRequest(BaseModel):
