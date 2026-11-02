@@ -270,7 +270,7 @@ def _search_public_references(
         )
         if status is None or not body:
             continue
-        candidates = re.findall(r"https?://[^\"'<>\\s]+", body)
+        candidates = re.findall(r"https?://[^\"'<>\s]+", body)
         for candidate in candidates:
             candidate = unquote(candidate).rstrip(").,;")
             parsed = urlsplit(candidate)
@@ -332,11 +332,19 @@ def _fallback_platform_status(
             None,
             None,
             "LIKELY_FOUND",
-            f"independent public references={len(references)}",
+            f"username={username} request_url={PLATFORM_URL_PATTERNS[platform_key].format(username=username)} "
+            f"signals=independent_public_references:{len(references)}",
         )
         return "LIKELY_FOUND", "Detected through independent public sources."
     message = PLATFORM_RESTRICTED_MESSAGES[platform_key]
-    _log_detection(platform_key, None, None, "RESTRICTED", message)
+    _log_detection(
+        platform_key,
+        None,
+        None,
+        "RESTRICTED",
+        f"username={username} request_url={PLATFORM_URL_PATTERNS[platform_key].format(username=username)} "
+        "signals=no_confirming_public_evidence",
+    )
     return "RESTRICTED", message
 
 
@@ -350,8 +358,22 @@ def _validate_public_profile(
     """Verify a profile using direct metadata, explicit absence, then public references."""
 
     status, final_url, body, _ = _request_profile(platform_key, username, timeout)
+    metadata = _profile_metadata(body)
+    print(
+        f"Platform request: platform={platform_key} username={username} "
+        f"request_url={PLATFORM_URL_PATTERNS[platform_key].format(username=username)} "
+        f"status={status} redirect_chain=[{PLATFORM_URL_PATTERNS[platform_key].format(username=username)},"
+        f"{final_url}] metadata={','.join(sorted(metadata)) or 'none'}"
+    )
     if status == 404 or _explicit_not_found(body):
-        _log_detection(platform_key, status, final_url, "NOT_FOUND", "explicit absence evidence")
+        _log_detection(
+            platform_key,
+            status,
+            final_url,
+            "NOT_FOUND",
+            f"username={username} request_url={PLATFORM_URL_PATTERNS[platform_key].format(username=username)} "
+            "signals=explicit_absence_evidence",
+        )
         return "NOT_FOUND", None
     metadata_method = (
         _metadata_profile_evidence(body, final_url or "", username, expected_path, allowed_hosts)
@@ -359,7 +381,14 @@ def _validate_public_profile(
         else None
     )
     if metadata_method:
-        _log_detection(platform_key, status, final_url, "FOUND", metadata_method)
+        _log_detection(
+            platform_key,
+            status,
+            final_url,
+            "FOUND",
+            f"username={username} request_url={PLATFORM_URL_PATTERNS[platform_key].format(username=username)} "
+            f"metadata={','.join(sorted(metadata))} signals={metadata_method}",
+        )
         return "FOUND", None
     if platform_key == "threads":
         canonical_status, canonical_url, canonical_body, _ = _request_threads_canonical(
@@ -383,7 +412,9 @@ def _validate_public_profile(
                 canonical_status,
                 canonical_url,
                 "FOUND",
-                f"canonical metadata {canonical_method}",
+                f"username={username} request_url=https://www.threads.com/@{username}/ "
+                f"metadata={','.join(sorted(_profile_metadata(canonical_body)))} "
+                f"signals=canonical_metadata:{canonical_method}",
             )
             return "FOUND", None
     return _fallback_platform_status(platform_key, username, timeout)
@@ -685,13 +716,30 @@ def _apply_platform_result(
         )
     elif status == "RESTRICTED":
         result["verification_reasons"][platform_key] = (
-            reason or PLATFORM_RESTRICTED_MESSAGES.get(
+            PLATFORM_RESTRICTED_MESSAGES.get(
                 platform_key,
                 "Public verification restricted by platform.",
             )
         )
     else:
         result["verification_reasons"].pop(platform_key, None)
+
+
+def _apply_cross_platform_confidence(result: ScanResult, username: str) -> None:
+    """Use a confirmed Threads identity to strengthen an uncertain Instagram result."""
+
+    if (
+        result["verification_status"]["threads"] == "FOUND"
+        and result["verification_status"]["instagram"] in {"RESTRICTED", "LIKELY_FOUND"}
+    ):
+        result["instagram"] = True
+        result["verification_status"]["instagram"] = "LIKELY_FOUND"
+        result["verification_reasons"]["instagram"] = "Associated Threads account detected."
+        print(
+            f"Cross-platform verification: username={username} "
+            "source=threads target=instagram decision=LIKELY_FOUND "
+            "reason=associated_threads_account_detected"
+        )
 
 
 async def scan_username(username: str) -> ScanResult:
@@ -753,6 +801,7 @@ async def scan_username_with_progress(
             platform_status in {"FOUND", "LIKELY_FOUND"},
         )
 
+    _apply_cross_platform_confidence(result, username)
     return result
 
 
