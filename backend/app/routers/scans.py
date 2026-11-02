@@ -2,12 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db_session
 from app.schemas.scan_history import ScanHistoryResponse
 from app.services.scan_history_service import (
+    delete_all_scans,
+    delete_scan,
     get_scan,
     get_scan_analytics,
     list_scans,
@@ -32,6 +34,48 @@ async def get_scans(
     return list(await list_scans(session, limit=limit, offset=offset))
 
 
+@router.delete(
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Clear persisted scan history",
+)
+async def clear_scans(session: DatabaseSession) -> Response:
+    """Delete all persisted scans."""
+
+    await delete_all_scans(session)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/{scan_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete one persisted scan",
+)
+async def delete_scan_by_id(
+    session: DatabaseSession,
+    scan_id: Annotated[int, Path(ge=1)],
+) -> Response:
+    """Delete one persisted scan by ID."""
+
+    deleted = await delete_scan(session, scan_id)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scan not found",
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get(
+    "/analytics/summary",
+    summary="Return aggregate scan analytics",
+)
+async def get_analytics(session: DatabaseSession) -> dict[str, object]:
+    """Return dashboard metrics for persisted scans."""
+
+    return await get_scan_analytics(session)
+
+
 @router.get(
     "/{scan_id}",
     response_model=ScanHistoryResponse,
@@ -50,13 +94,3 @@ async def get_scan_by_id(
             detail="Scan not found",
         )
     return scan
-
-
-@router.get(
-    "/analytics/summary",
-    summary="Return aggregate scan analytics",
-)
-async def get_analytics(session: DatabaseSession) -> dict[str, object]:
-    """Return dashboard metrics for persisted scans."""
-
-    return await get_scan_analytics(session)

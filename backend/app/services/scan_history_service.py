@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -144,6 +144,32 @@ async def get_scan(session: AsyncSession, scan_id: int) -> Scan | None:
     return await session.get(Scan, scan_id)
 
 
+async def delete_scan(session: AsyncSession, scan_id: int) -> bool:
+    """Delete one persisted scan and report whether it existed."""
+
+    scan = await get_scan(session, scan_id)
+    if scan is None:
+        return False
+    try:
+        await session.delete(scan)
+        await session.commit()
+    except SQLAlchemyError:
+        await session.rollback()
+        raise
+    return True
+
+
+async def delete_all_scans(session: AsyncSession) -> None:
+    """Delete every persisted scan."""
+
+    try:
+        await session.execute(delete(Scan))
+        await session.commit()
+    except SQLAlchemyError:
+        await session.rollback()
+        raise
+
+
 async def get_scan_by_report_id(
     session: AsyncSession,
     report_id: str,
@@ -178,7 +204,7 @@ async def get_scan_analytics(session: AsyncSession) -> dict[str, object]:
             "total_scans": 0,
             "highest_risk_score": 0,
             "average_risk_score": 0,
-            "most_common_platform": None,
+            "most_common_platform": "-",
             "recent_activity": [],
         }
     platform_fields = (

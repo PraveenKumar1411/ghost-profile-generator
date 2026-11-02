@@ -84,6 +84,14 @@ export async function getAnalytics() {
   return data
 }
 
+export async function deleteScan(scanId) {
+  await api.delete(`/scans/${encodeURIComponent(scanId)}`)
+}
+
+export async function deleteAllScans() {
+  await api.delete('/scans')
+}
+
 export async function getSystemStatus() {
   const { data } = await api.get('/health')
   return data
